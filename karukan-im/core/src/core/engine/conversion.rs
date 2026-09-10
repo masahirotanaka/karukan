@@ -594,8 +594,9 @@ impl InputMethodEngine {
                 if key.modifiers.control_key {
                     match key.keysym {
                         // Emacs-style navigation. In the grid layout the
-                        // four map onto the grid like the arrow keys:
-                        // Ctrl+N/P a row down/up, Ctrl+F/B along the row.
+                        // whole set maps onto the grid like the arrow keys:
+                        // Ctrl+N/P a row down/up, Ctrl+F/B along the row,
+                        // Ctrl+A/E to the row's first/last cell.
                         Keysym::KEY_N | Keysym::KEY_N_UPPER => return self.candidate_down(),
                         Keysym::KEY_P | Keysym::KEY_P_UPPER => return self.candidate_up(),
                         Keysym::KEY_F | Keysym::KEY_F_UPPER if self.grid_columns().is_some() => {
@@ -603,6 +604,12 @@ impl InputMethodEngine {
                         }
                         Keysym::KEY_B | Keysym::KEY_B_UPPER if self.grid_columns().is_some() => {
                             return self.prev_candidate();
+                        }
+                        Keysym::KEY_A | Keysym::KEY_A_UPPER if self.grid_columns().is_some() => {
+                            return self.candidate_row_start();
+                        }
+                        Keysym::KEY_E | Keysym::KEY_E_UPPER if self.grid_columns().is_some() => {
+                            return self.candidate_row_end();
                         }
                         // Ctrl+R / Ctrl+T: cycle the source filter. Both
                         // keysym cases — some environments fold Shift into
@@ -909,6 +916,23 @@ impl InputMethodEngine {
         match self.grid_columns() {
             Some(columns) => self.navigate_candidate(|c| c.move_up(columns)),
             None => self.prev_candidate(),
+        }
+    }
+
+    /// Ctrl+A in the grid: the row's first cell. Only bound there — the
+    /// vertical list keeps Ctrl+A as the composing caret move.
+    fn candidate_row_start(&mut self) -> EngineResult {
+        match self.grid_columns() {
+            Some(columns) => self.navigate_candidate(|c| c.move_row_start(columns)),
+            None => EngineResult::consumed(),
+        }
+    }
+
+    /// Ctrl+E in the grid: the row's last occupied cell.
+    fn candidate_row_end(&mut self) -> EngineResult {
+        match self.grid_columns() {
+            Some(columns) => self.navigate_candidate(|c| c.move_row_end(columns)),
+            None => EngineResult::consumed(),
         }
     }
 

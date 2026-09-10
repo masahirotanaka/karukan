@@ -17,7 +17,7 @@ struct PreeditAttr: Decodable {
     let style: String
 }
 
-struct CandidateItem: Decodable {
+struct CandidateItem: Decodable, Equatable {
     let text: String
     let description: String?
 }

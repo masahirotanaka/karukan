@@ -66,8 +66,9 @@ verbose = false
 # grid は 1 ページに columns × rows 個の候補を並べる（macOS の日本語入力や
 # MS-IME の「候補の一覧表示」に相当）。columns / rows は省略すると 5。
 # 番号は表示されないが、Ctrl+1〜9 での選択は先頭 9 候補にそのまま使える。
-# grid 中の移動: ←→↑↓ / Ctrl+B・F（左右）/ Ctrl+N・P（上下）。
-# Space・Tab は従来どおり次候補、PageUp/PageDown はページ移動。
+# grid 中の移動: ←→↑↓ / Ctrl+B・F（左右）/ Ctrl+N・P（上下）/
+# Ctrl+A・E（行頭・行末）。Space・Tab は従来どおり次候補、
+# PageUp/PageDown はページ移動。
 candidate_layout = { type = "vertical" }
 
 # どのキーがどの記号を入力するか。幅（半角・全角）は [width] が決める。

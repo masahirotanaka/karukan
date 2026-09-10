@@ -282,6 +282,28 @@ impl CandidateList {
         true
     }
 
+    /// Grid layout: jump to the first cell of the cursor's row (Ctrl+A).
+    /// Rows never span pages (`page_size` is a multiple of `columns`).
+    pub fn move_row_start(&mut self, columns: usize) -> bool {
+        if self.candidates.is_empty() || columns == 0 {
+            return false;
+        }
+        self.cursor -= self.cursor % columns;
+        true
+    }
+
+    /// Grid layout: jump to the last occupied cell of the cursor's row
+    /// (Ctrl+E) — the row's final column, or the last candidate when the
+    /// final row is partial.
+    pub fn move_row_end(&mut self, columns: usize) -> bool {
+        if self.candidates.is_empty() || columns == 0 {
+            return false;
+        }
+        let row_start = self.cursor - self.cursor % columns;
+        self.cursor = (row_start + columns - 1).min(self.candidates.len() - 1);
+        true
+    }
+
     /// Move to the next page
     pub fn next_page(&mut self) -> bool {
         if self.candidates.is_empty() {
@@ -446,6 +468,26 @@ mod tests {
         candidates.set_cursor(1); // item2
         assert!(candidates.move_up(2));
         assert_eq!(candidates.selected_text(), Some("item8"));
+    }
+
+    #[test]
+    fn test_grid_move_row_start_and_end() {
+        // 2 columns: item1 item2 / item3 item4 / item5 item6 | item7 item8
+        let mut candidates = grid_list(8);
+
+        candidates.set_cursor(3); // item4
+        assert!(candidates.move_row_start(2));
+        assert_eq!(candidates.selected_text(), Some("item3"));
+        assert!(candidates.move_row_end(2));
+        assert_eq!(candidates.selected_text(), Some("item4"));
+
+        // A partial final row ends at the last candidate.
+        let mut candidates = grid_list(7);
+        candidates.set_cursor(6); // item7, alone on its row
+        assert!(candidates.move_row_end(2));
+        assert_eq!(candidates.selected_text(), Some("item7"));
+        assert!(candidates.move_row_start(2));
+        assert_eq!(candidates.selected_text(), Some("item7"));
     }
 
     #[test]

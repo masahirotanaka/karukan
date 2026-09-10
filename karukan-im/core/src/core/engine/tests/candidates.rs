@@ -160,6 +160,13 @@ fn test_grid_arrow_and_emacs_navigation() {
     // ↑ from the second row returns to the top.
     engine.process_key(&press_key(Keysym::UP));
     assert_eq!(cursor_of(&engine), 0);
+
+    // Ctrl+E / Ctrl+A jump to the row's last / first cell.
+    engine.process_key(&press_ctrl(Keysym::KEY_E));
+    assert_eq!(cursor_of(&engine), 1);
+    engine.process_key(&press_ctrl(Keysym::KEY_A));
+    assert_eq!(cursor_of(&engine), 0);
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
 }
 
 #[test]
