@@ -23,6 +23,8 @@ class CandidateWindowController {
         let cursor: Int
         let page: Int
         let totalPages: Int
+        /// Grid layout column count from the engine; nil = vertical list.
+        let gridColumns: Int?
     }
     private var pageState: PageState?
 
@@ -64,10 +66,12 @@ class CandidateWindowController {
     /// the panel is already on screen, since the composition anchor
     /// doesn't move mid-composition.
     func show(
-        candidates: [CandidateItem], cursor: Int, page: Int, totalPages: Int, cursorRect: NSRect?
+        candidates: [CandidateItem], cursor: Int, page: Int, totalPages: Int,
+        gridColumns: Int?, cursorRect: NSRect?
     ) {
         pageState = PageState(
-            candidates: candidates, cursor: cursor, page: page, totalPages: totalPages)
+            candidates: candidates, cursor: cursor, page: page, totalPages: totalPages,
+            gridColumns: gridColumns)
         render(cursorRect: cursorRect)
     }
 
@@ -101,8 +105,12 @@ class CandidateWindowController {
             return
         }
 
-        for (index, candidate) in state.candidates.enumerated() {
-            addCandidateRow(candidate, number: index + 1, selected: index == state.cursor)
+        if let columns = state.gridColumns, columns > 1, !state.candidates.isEmpty {
+            addCandidateGrid(state.candidates, columns: columns, cursor: state.cursor)
+        } else {
+            for (index, candidate) in state.candidates.enumerated() {
+                addCandidateRow(candidate, number: index + 1, selected: index == state.cursor)
+            }
         }
         if state.totalPages > 1 {
             addFooterLabel("[\(state.page + 1)/\(state.totalPages)]")
@@ -123,8 +131,47 @@ class CandidateWindowController {
     }
 
     private func addCandidateRow(_ candidate: CandidateItem, number: Int, selected: Bool) {
+        let label = candidateLabel(candidate, number: number, selected: selected)
+        stackView.addArrangedSubview(label)
+        rowViews.append(label)
+    }
+
+    /// Grid layout: the page's candidates laid out row-major at `columns`
+    /// cells per row. Cells carry no number — the grid holds more
+    /// candidates than digit selection can reach, so a partial numbering
+    /// would mislead — and NSGridView keeps the columns aligned.
+    private func addCandidateGrid(_ candidates: [CandidateItem], columns: Int, cursor: Int) {
+        let grid = NSGridView()
+        grid.rowSpacing = 4
+        grid.columnSpacing = 16
+        grid.translatesAutoresizingMaskIntoConstraints = false
+
+        var index = 0
+        while index < candidates.count {
+            let end = min(index + columns, candidates.count)
+            var cells: [NSView] = (index..<end).map { i in
+                candidateLabel(candidates[i], number: nil, selected: i == cursor)
+            }
+            // Pad the last row so every row has `columns` cells.
+            while cells.count < columns {
+                cells.append(NSGridCell.emptyContentView)
+            }
+            grid.addRow(with: cells)
+            index = end
+        }
+
+        stackView.addArrangedSubview(grid)
+        rowViews.append(grid)
+    }
+
+    /// One candidate as a styled label: `number` prefixes the vertical
+    /// list's rows, nil for grid cells.
+    private func candidateLabel(_ candidate: CandidateItem, number: Int?, selected: Bool)
+        -> NSTextField
+    {
+        let prefix = number.map { "\($0). " } ?? ""
         let text = NSMutableAttributedString(
-            string: "\(number). \(candidate.text)",
+            string: "\(prefix)\(candidate.text)",
             attributes: [
                 .font: NSFont.systemFont(ofSize: Self.candidateFontSize),
                 .foregroundColor: selected ? NSColor.white : NSColor.labelColor,
@@ -152,8 +199,7 @@ class CandidateWindowController {
             label.backgroundColor = .clear
             label.drawsBackground = false
         }
-        stackView.addArrangedSubview(label)
-        rowViews.append(label)
+        return label
     }
 
     private func addFooterLabel(_ text: String) {
