@@ -75,7 +75,7 @@ jinen-v2-small-q8 = { repo = "togatogah/jinen-v2-small.gguf", filename = "jinen-
 my-model = "/home/user/models/my-model.gguf"                                                            # ローカルの GGUF
 ```
 
-既定のモデルを差し替えるには同じキーに書きます（`jinen-v2-small-q5 = "/path/to/model.gguf"`）。書き間違いは起動時のログと、そのモデルを使うときのエラーに出ます。
+既定のモデルを差し替えるには同じキーに書きます（`jinen-v2-small-q5 = "/path/to/model.gguf"`）。不正なエントリは起動時のログと、そのモデルを使うときのエラーに出ます。
 
 設定変更後はfcitx5の再起動（macOSは `killall KarukanIME`）で反映されます。
 
