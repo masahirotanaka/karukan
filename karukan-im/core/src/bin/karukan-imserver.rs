@@ -12,38 +12,28 @@
 
 use std::io::{BufRead, Write};
 
+use anyhow::Context;
 use karukan_im::config::Settings;
 use karukan_im::server::ImServer;
 
 /// Warm the HF cache for every `[models]` entry; local-path entries are
-/// only checked for existence.
-fn prefetch_models() -> i32 {
-    let settings = match Settings::load() {
-        Ok(settings) => settings,
-        Err(e) => {
-            tracing::error!("failed to load settings: {e:#}");
-            return 1;
-        }
-    };
-    let mut failed = false;
+/// only checked for existence. Stops at the first failure: the next one
+/// would only repeat the cause after another network timeout.
+fn prefetch_models() -> anyhow::Result<()> {
+    let settings = Settings::load()?;
     for key in settings.models.keys() {
-        let resolved = settings
-            .model_source(key)
-            .and_then(|source| source.resolve().map_err(anyhow::Error::from));
-        match resolved {
-            Ok((gguf, tokenizer)) => tracing::info!(
-                "Model '{}' ready: {} (tokenizer: {})",
-                key,
-                gguf.display(),
-                tokenizer.display()
-            ),
-            Err(e) => {
-                tracing::error!("model '{}' prefetch failed: {e:#}", key);
-                failed = true;
-            }
-        }
+        let (gguf, tokenizer) = settings
+            .model_source(key)?
+            .resolve()
+            .with_context(|| format!("model '{key}'"))?;
+        tracing::info!(
+            "Model '{}' ready: {} (tokenizer: {})",
+            key,
+            gguf.display(),
+            tokenizer.display()
+        );
     }
-    i32::from(failed)
+    Ok(())
 }
 
 fn main() {
@@ -56,7 +46,11 @@ fn main() {
         .init();
 
     if std::env::args().any(|arg| arg == "--prefetch-models") {
-        std::process::exit(prefetch_models());
+        if let Err(e) = prefetch_models() {
+            tracing::error!("model prefetch failed: {e:#}");
+            std::process::exit(1);
+        }
+        return;
     }
 
     let mut server = ImServer::new();

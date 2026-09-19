@@ -2,15 +2,13 @@
 
 mod backend;
 pub mod error;
-pub mod hf_download;
+mod hf_download;
 pub mod llamacpp;
 
 pub use backend::{
-    Backend, ConversionConfig, KanaKanjiConverter, ModelSource, build_jinen_prompt,
-    clean_model_output,
+    ConversionConfig, KanaKanjiConverter, ModelSource, build_jinen_prompt, clean_model_output,
 };
 pub use error::KanjiError;
-pub use hf_download::download_gguf;
 pub use llama_cpp_2::token::LlamaToken;
 pub use llamacpp::{LlamaCppModel, NllScorer};
 

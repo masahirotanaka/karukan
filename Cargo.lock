@@ -1719,7 +1719,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokenizers",
- "toml",
  "tracing",
  "unicode-normalization",
  "yada",

@@ -106,13 +106,7 @@ pub struct LlamaCppModel {
 /// first and fail as an ordinary error the caller can degrade on.
 fn ensure_model_file_exists(path: &Path) -> Result<()> {
     if !path.exists() {
-        return Err(KanjiError::ModelLoad(
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("model file not found: {}", path.display()),
-            )
-            .into(),
-        ));
+        return Err(KanjiError::ModelNotFound(path.to_path_buf()));
     }
     Ok(())
 }
@@ -895,7 +889,7 @@ mod missing_file_tests {
     #[test]
     fn missing_model_file_is_err_not_panic() {
         let result = LlamaCppModel::from_file("/nonexistent/model.gguf", "/nonexistent/tok.json");
-        assert!(matches!(result, Err(KanjiError::ModelLoad(_))));
+        assert!(matches!(result, Err(KanjiError::ModelNotFound(_))));
     }
 }
 

@@ -43,7 +43,7 @@ pub struct Settings {
 pub struct ModelDef {
     pub repo: Option<String>,
     pub filename: Option<String>,
-    pub path: Option<String>,
+    pub path: Option<PathBuf>,
 }
 
 impl ModelDef {
@@ -53,12 +53,8 @@ impl ModelDef {
                 repo: repo.clone(),
                 filename: filename.clone(),
             }),
-            (None, None, Some(path)) => Ok(ModelSource::Path(PathBuf::from(path))),
-            (None, None, None) => anyhow::bail!("set either repo + filename or path"),
-            (Some(_), None, None) | (None, Some(_), None) => {
-                anyhow::bail!("repo and filename must be set together")
-            }
-            _ => anyhow::bail!("repo + filename and path are mutually exclusive"),
+            (None, None, Some(path)) => Ok(ModelSource::Path(path.clone())),
+            _ => anyhow::bail!("set exactly one of repo + filename, or path"),
         }
     }
 }
@@ -230,24 +226,18 @@ fn merge_toml(base: &mut toml::Value, overlay: &toml::Value) {
 }
 
 /// Parse user TOML content merged on top of default.toml.
-///
-/// `[models]` merges per key, but each entry replaces whole: a user entry
-/// with only `path` must not inherit `repo`/`filename` from the default
-/// entry under the same key.
 fn parse_with_defaults(user_content: &str) -> Result<Settings> {
     let mut base: toml::Value = toml::from_str(DEFAULT_CONFIG_TOML)?;
-    let mut user: toml::Value = toml::from_str(user_content)?;
-    if let (toml::Value::Table(base_table), toml::Value::Table(user_table)) = (&mut base, &mut user)
-        && let Some(toml::Value::Table(user_models)) = user_table.remove("models")
-        && let Some(toml::Value::Table(base_models)) = base_table.get_mut("models")
-    {
-        for (key, value) in user_models {
-            base_models.insert(key, value);
-        }
-    }
+    let user: toml::Value = toml::from_str(user_content)?;
     merge_toml(&mut base, &user);
-    let settings: Settings = base.try_into()?;
-    Ok(settings)
+    // A `[models]` entry replaces the default under the same key whole: one
+    // written with only `path` must not inherit the default's repo/filename.
+    if let Some(user_models) = user.get("models").and_then(toml::Value::as_table)
+        && let Some(base_models) = base.get_mut("models").and_then(toml::Value::as_table_mut)
+    {
+        base_models.extend(user_models.clone());
+    }
+    Ok(base.try_into()?)
 }
 
 /// Get the project directories for karukan-im.

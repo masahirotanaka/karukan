@@ -17,10 +17,15 @@ pub(super) struct LoadedConverters {
     pub light_kanji: Option<KanaKanjiConverter>,
 }
 
-/// Create a KanaKanjiConverter from a model source, optionally setting thread count.
-fn create_converter(source: &ModelSource, n_threads: u32) -> Result<KanaKanjiConverter> {
-    let backend = karukan_engine::Backend::from_source(source)?;
-    let mut converter = KanaKanjiConverter::new(backend)?;
+/// A `[models]` key with the source it resolved to; the key is the name
+/// the UI shows for the model.
+type NamedSource = (String, ModelSource);
+
+/// Load `source` as the converter shown as `name`, optionally setting the
+/// thread count.
+fn create_converter((name, source): &NamedSource, n_threads: u32) -> Result<KanaKanjiConverter> {
+    let mut converter = KanaKanjiConverter::from_source(source, name)
+        .with_context(|| format!("failed to load model '{name}'"))?;
     if n_threads > 0 {
         converter.set_n_threads(n_threads);
     }
@@ -31,12 +36,11 @@ fn create_converter(source: &ModelSource, n_threads: u32) -> Result<KanaKanjiCon
 /// may block on a model download, which must stay off the key-event thread.
 /// A light-model failure is non-fatal (beam search is simply unavailable).
 fn load_converters(
-    main: ModelSource,
-    light: Option<ModelSource>,
+    main: NamedSource,
+    light: Option<NamedSource>,
     n_threads: u32,
 ) -> Result<LoadedConverters> {
-    let kanji =
-        create_converter(&main, n_threads).context("failed to initialize the main model")?;
+    let kanji = create_converter(&main, n_threads)?;
     tracing::info!("Main model loaded: {}", kanji.model_display_name());
 
     let light_kanji = light.and_then(|source| match create_converter(&source, n_threads) {
@@ -97,29 +101,28 @@ impl InputMethodEngine {
         }
 
         let conv = &settings.conversion;
-        // The Light strategy runs the light model alone in the main slot.
-        let main_key = match conv.strategy {
-            StrategyMode::Light => &conv.light_model,
-            _ => &conv.model,
+        // Light runs the light model alone in the main slot; only Adaptive
+        // keeps a separate light model for beam search.
+        let (main_key, light_key) = match conv.strategy {
+            StrategyMode::Light => (&conv.light_model, None),
+            StrategyMode::Main => (&conv.model, None),
+            StrategyMode::Adaptive => (&conv.model, Some(&conv.light_model)),
         };
-        let main = match settings.model_source(main_key) {
+        let named = |key: &String| settings.model_source(key).map(|s| (key.clone(), s));
+        let main = match named(main_key) {
             Ok(source) => source,
             Err(e) => {
                 tracing::error!("invalid model settings, continuing without model: {e:#}");
                 return;
             }
         };
-        // Only Adaptive keeps a separate light model for beam search.
-        let light = match conv.strategy {
-            StrategyMode::Adaptive => match settings.model_source(&conv.light_model) {
-                Ok(source) => Some(source),
-                Err(e) => {
-                    tracing::warn!("invalid light_model settings, beam search unavailable: {e:#}");
-                    None
-                }
-            },
-            _ => None,
-        };
+        let light = light_key.and_then(|key| {
+            named(key)
+                .inspect_err(|e| {
+                    tracing::warn!("invalid light_model settings, beam search unavailable: {e:#}")
+                })
+                .ok()
+        });
         let n_threads = conv.n_threads;
 
         let (tx, rx) = mpsc::channel();
