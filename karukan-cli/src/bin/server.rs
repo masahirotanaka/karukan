@@ -284,17 +284,16 @@ fn load_model(settings: &Settings, key: &str) -> anyhow::Result<Arc<LlamaCppMode
     Ok(Arc::new(LlamaCppModel::from_file(&gguf, &tokenizer)?))
 }
 
-/// The model a request without one converts with: the config's
-/// `[conversion] model` if it loaded, else any loaded model.
+/// Which model serves a request that names none: the configured
+/// `[conversion] model` when it loaded, else the first loaded one.
 fn default_model_id<'a>(
     models: &'a BTreeMap<String, Arc<LlamaCppModel>>,
-    configured: &'a str,
+    configured: &str,
 ) -> Option<&'a str> {
-    if models.contains_key(configured) {
-        Some(configured)
-    } else {
-        models.keys().next().map(String::as_str)
-    }
+    models
+        .get_key_value(configured)
+        .or_else(|| models.iter().next())
+        .map(|(key, _)| key.as_str())
 }
 
 async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {
