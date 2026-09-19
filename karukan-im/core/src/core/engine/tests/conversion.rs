@@ -77,9 +77,9 @@ fn test_stray_keys_are_consumed_during_conversion() {
     let cursor = engine.candidates().unwrap().cursor();
 
     for key in [
-        press_ctrl(Keysym(0x0067)), // Ctrl+g (unbound)
-        press_ctrl(Keysym(0x0077)), // Ctrl+w (unbound; closes a browser tab)
-        press_key(Keysym(0xffc2)),  // F5
+        press_ctrl('g'),           // unbound
+        press_ctrl('w'),           // unbound; closes a browser tab
+        press_key(Keysym(0xffc2)), // F5
     ] {
         let result = engine.process_key(&key);
         assert!(result.consumed, "key must not leak to the application");
@@ -136,7 +136,7 @@ fn test_ctrl_digit_selects_candidate_during_conversion() {
         .map(|c| c.text.clone())
         .collect();
 
-    let result = engine.process_key(&press_ctrl(Keysym::KEY_2));
+    let result = engine.process_key(&press_ctrl('2'));
     assert_eq!(committed(&result).as_deref(), Some(shown[1].as_str()));
     assert!(matches!(engine.state(), InputState::Empty));
     assert!(engine.input_buf.is_empty(), "buffer must be cleared");
@@ -172,7 +172,7 @@ fn test_ctrl_digit_selects_candidate_while_composing() {
         + 1;
     assert!(matches!(engine.state(), InputState::Composing { .. }));
 
-    let result = engine.process_key(&press_ctrl(Keysym(b'0' as u32 + digit as u32)));
+    let result = engine.process_key(&press_ctrl(char::from(b'0' + digit as u8)));
     assert_eq!(committed(&result).as_deref(), Some("藍"));
     assert!(matches!(engine.state(), InputState::Empty));
 }
@@ -185,7 +185,7 @@ fn test_ctrl_digit_with_no_suggestion_is_consumed() {
     engine.converters.kanji = None;
 
     engine.process_key(&press('a'));
-    let result = engine.process_key(&press_ctrl(Keysym::KEY_9));
+    let result = engine.process_key(&press_ctrl('9'));
     assert!(result.consumed);
     assert!(committed(&result).is_none());
     assert!(matches!(engine.state(), InputState::Composing { .. }));
@@ -202,7 +202,7 @@ fn test_emoji_digit_selection_does_not_pollute_learning() {
         engine.process_key(&press(ch));
     }
 
-    let result = engine.process_key(&press_ctrl(Keysym::KEY_1));
+    let result = engine.process_key(&press_ctrl('1'));
     assert!(committed(&result).is_some(), "emoji must commit");
     assert_eq!(engine.mode.current(), InputMode::Hiragana);
     let learned = engine.learning.as_ref().unwrap();
@@ -241,7 +241,7 @@ fn test_arrow_in_source_view_dissolves_the_filter() {
     for ch in "kyou".chars() {
         engine.process_key(&press(ch));
     }
-    engine.process_key(&press_ctrl(Keysym::KEY_I));
+    engine.process_key(&press_ctrl('i'));
     assert!(matches!(engine.state(), InputState::Conversion { .. }));
 
     let result = engine.process_key(&press_key(Keysym::LEFT));
@@ -260,7 +260,7 @@ fn test_ctrl_b_in_conversion_moves_caret_like_left() {
     engine.process_key(&press_key(Keysym::SPACE));
     assert!(matches!(engine.state(), InputState::Conversion { .. }));
 
-    let result = engine.process_key(&press_ctrl(Keysym::KEY_B));
+    let result = engine.process_key(&press_ctrl('b'));
     assert!(result.consumed);
     assert!(matches!(engine.state(), InputState::Composing { .. }));
     assert_eq!(engine.input_buf.cursor(), 2);

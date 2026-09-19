@@ -43,7 +43,7 @@ fn test_shift_letter_fcitx5_lowercase_keysym() {
     // fcitx5 sends keysym='a' (lowercase!) with modifiers.shift_key=true
     // This should enter alphabet mode and input uppercase 'A'
     let event = KeyEvent::new(
-        Keysym(0x0061), // lowercase 'a'
+        Keysym::from('a'),
         KeyModifiers::new().with_shift(true),
         true,
     );
@@ -67,7 +67,11 @@ fn test_shift_letter_in_hiragana_enters_alphabet_and_uppercase() {
     engine.process_key(&press_key(Keysym::SHIFT_L));
 
     // Shift+a (fcitx5 sends lowercase keysym)
-    let event = KeyEvent::new(Keysym(0x0061), KeyModifiers::new().with_shift(true), true);
+    let event = KeyEvent::new(
+        Keysym::from('a'),
+        KeyModifiers::new().with_shift(true),
+        true,
+    );
     engine.process_key(&event);
     assert!(engine.mode.current() == InputMode::Alphabet);
     assert_eq!(engine.preedit().unwrap().text(), "あA");
@@ -283,7 +287,7 @@ fn test_shift_alphabet_from_katakana_reverts_to_katakana() {
 
     // Type a char, then switch to katakana mode (Ctrl+K)
     engine.process_key(&press('a'));
-    engine.process_key(&press_ctrl(Keysym::KEY_K));
+    engine.process_key(&press_ctrl('k'));
     assert!(engine.mode.current() == InputMode::Katakana);
 
     // Shift+A enters alphabet, remembering Katakana as the prior mode

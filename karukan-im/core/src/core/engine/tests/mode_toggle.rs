@@ -115,7 +115,7 @@ fn test_henkan_switches_katakana_to_hiragana_and_bakes_preedit() {
     // Compose "か", enter katakana mode via Ctrl+K
     engine.process_key(&press('k'));
     engine.process_key(&press('a'));
-    engine.process_key(&press_ctrl(Keysym::KEY_K));
+    engine.process_key(&press_ctrl('k'));
     assert!(engine.mode.current() == InputMode::Katakana);
     assert_eq!(engine.preedit().unwrap().text(), "カ");
 
@@ -174,7 +174,7 @@ fn test_toggle_key_is_inert_during_conversion() {
     // Katakana mode, compose かか, start conversion (candidate window open)
     engine.process_key(&press('k'));
     engine.process_key(&press('a'));
-    engine.process_key(&press_ctrl(Keysym::KEY_K));
+    engine.process_key(&press_ctrl('k'));
     engine.process_key(&press('k'));
     engine.process_key(&press('a'));
     engine.process_key(&press_key(Keysym::SPACE));
@@ -202,7 +202,7 @@ fn test_toggle_key_exits_alphabet_during_conversion() {
     engine.process_key(&press('a'));
     engine.process_key(&press('i'));
     engine.process_key(&press_key(Keysym::SPACE));
-    engine.process_key(&press_ctrl(Keysym::KEY_I));
+    engine.process_key(&press_ctrl('i'));
     assert!(matches!(engine.state(), InputState::Conversion { .. }));
 
     engine.process_key(&press_shift('A'));

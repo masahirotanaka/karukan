@@ -366,12 +366,12 @@ fn test_ctrl_shift_l_toggles_live_conversion() {
     assert!(!engine.live.enabled);
 
     // Ctrl+Shift+L → toggle ON
-    let result = engine.process_key(&press_ctrl_shift(Keysym::KEY_L_UPPER));
+    let result = engine.process_key(&press_ctrl_shift('L'));
     assert!(result.consumed);
     assert!(engine.live.enabled);
 
     // Ctrl+Shift+L again → toggle OFF
-    let result = engine.process_key(&press_ctrl_shift(Keysym::KEY_L_UPPER));
+    let result = engine.process_key(&press_ctrl_shift('L'));
     assert!(result.consumed);
     assert!(!engine.live.enabled);
 }
@@ -382,7 +382,7 @@ fn test_ctrl_shift_l_lowercase_toggles() {
     assert!(!engine.live.enabled);
 
     // Ctrl+Shift+l (lowercase keysym) → toggle ON
-    let result = engine.process_key(&press_ctrl_shift(Keysym::KEY_L));
+    let result = engine.process_key(&press_ctrl_shift('l'));
     assert!(result.consumed);
     assert!(engine.live.enabled);
 }
@@ -399,7 +399,7 @@ fn test_toggle_on_during_composing_applies_immediately() {
     engine.process_key(&press('i'));
     assert!(!engine.live.enabled);
 
-    let result = engine.process_key(&press_ctrl_shift(Keysym::KEY_L_UPPER));
+    let result = engine.process_key(&press_ctrl_shift('L'));
     assert!(result.consumed);
     assert!(engine.live.enabled);
 
@@ -423,7 +423,7 @@ fn test_toggle_off_during_composing_clears_live_text() {
     engine.process_key(&press('i'));
     set_live_text(&mut engine, "愛");
 
-    let result = engine.process_key(&press_ctrl_shift(Keysym::KEY_L_UPPER));
+    let result = engine.process_key(&press_ctrl_shift('L'));
     assert!(result.consumed);
     assert!(!engine.live.enabled);
     assert!(engine.live_text().is_empty());
@@ -454,7 +454,7 @@ fn test_ctrl_shift_l_shows_aux_text() {
     let mut engine = InputMethodEngine::new();
 
     // Ctrl+Shift+L → check aux text shows "ライブ変換: ON"
-    let result = engine.process_key(&press_ctrl_shift(Keysym::KEY_L_UPPER));
+    let result = engine.process_key(&press_ctrl_shift('L'));
     let has_aux = result
         .actions
         .iter()
@@ -462,7 +462,7 @@ fn test_ctrl_shift_l_shows_aux_text() {
     assert!(has_aux);
 
     // Ctrl+Shift+L again → "ライブ変換: OFF"
-    let result = engine.process_key(&press_ctrl_shift(Keysym::KEY_L_UPPER));
+    let result = engine.process_key(&press_ctrl_shift('L'));
     let has_aux = result.actions.iter().any(
         |a| matches!(a, EngineAction::UpdateAuxText(text) if text.contains("ライブ変換: OFF")),
     );

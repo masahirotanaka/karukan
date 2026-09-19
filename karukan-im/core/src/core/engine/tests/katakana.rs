@@ -20,7 +20,7 @@ fn test_ctrl_k_converts_to_katakana() {
 
     // Press Ctrl+k -> should convert preedit to katakana (preedit shows "アイウエオ")
     let ctrl_k = KeyEvent {
-        keysym: Keysym::KEY_K,
+        keysym: Keysym::from('k'),
         modifiers: KeyModifiers {
             control_key: true,
             shift_key: false,
@@ -63,7 +63,7 @@ fn test_ctrl_k_with_empty_input() {
 
     // No input, Ctrl+k should do nothing harmful
     let ctrl_k = KeyEvent {
-        keysym: Keysym::KEY_K,
+        keysym: Keysym::from('k'),
         modifiers: KeyModifiers {
             control_key: true,
             shift_key: false,
@@ -98,7 +98,7 @@ fn test_ctrl_k_uppercase_converts_to_katakana() {
 
     // Press Ctrl+K (uppercase K) -> should convert preedit to katakana
     let ctrl_k_upper = KeyEvent {
-        keysym: Keysym::KEY_K_UPPER,
+        keysym: Keysym::from('K'),
         modifiers: KeyModifiers {
             control_key: true,
             shift_key: false,
@@ -148,7 +148,7 @@ fn test_katakana_baked_on_switch_to_alphabet() {
 
     // Ctrl+K → katakana mode, displays "アイウエオ"
     let ctrl_k = KeyEvent {
-        keysym: Keysym::KEY_K,
+        keysym: Keysym::from('k'),
         modifiers: KeyModifiers {
             control_key: true,
             shift_key: false,
@@ -184,7 +184,7 @@ fn test_ctrl_k_is_one_way_to_katakana() {
 
     // Ctrl+K → katakana mode
     let ctrl_k = KeyEvent {
-        keysym: Keysym::KEY_K,
+        keysym: Keysym::from('k'),
         modifiers: KeyModifiers {
             control_key: true,
             shift_key: false,
