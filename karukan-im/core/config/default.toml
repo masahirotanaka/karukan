@@ -65,10 +65,6 @@ filename = "jinen-v2-small-Q5_K_M.gguf"
 repo = "togatogah/jinen-v2-xsmall.gguf"
 filename = "jinen-v2-xsmall-Q5_K_M.gguf"
 
-[models."jinen-v1.1-beta-q5"]
-repo = "togatogah/jinen-v1.1-beta.gguf"
-filename = "jinen-v1.1-beta-Q5_K_M.gguf"
-
 [models.jinen-v1-small-q5]
 repo = "togatogah/jinen-v1-small.gguf"
 filename = "jinen-v1-small-Q5_K_M.gguf"

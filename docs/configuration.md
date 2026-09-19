@@ -55,13 +55,12 @@ phrases = [                    # フレーズ一覧（書くと既定一覧ご�
 - `repo` + `filename`: Hugging Face のリポジトリとGGUFファイル名。初回起動時にバックグラウンドで自動ダウンロードされます。`tokenizer.json` は同じリポジトリから読み込みます
 - `path`: ローカルのGGUFファイルのパス。`tokenizer.json` はGGUFと同じディレクトリに置きます
 
-既定で以下の5モデルが定義済みです（ユーザーの `config.toml` の `[models]` はキー単位でマージされ、同じキーは上書き、既定のエントリはそのまま残ります）。
+既定で以下の4モデルが定義済みです（ユーザーの `config.toml` の `[models]` はキー単位でマージされ、同じキーは上書き、既定のエントリはそのまま残ります）。
 
 | モデルキー | ベースモデル | パラメータ数 | Accuracy@1 (NFKC) |
 |---------|-----------|-----------|------:|
 | [`jinen-v2-small-q5`](https://huggingface.co/togatogah/jinen-v2-small.gguf)（デフォルト） | Qwen3 | 109M | 86.0% |
 | [`jinen-v2-xsmall-q5`](https://huggingface.co/togatogah/jinen-v2-xsmall.gguf) | Qwen3 | 36M | 79.0% |
-| [`jinen-v1.1-beta-q5`](https://huggingface.co/togatogah/jinen-v1.1-beta.gguf) | Qwen3 | 109M（beta） | 86.0% |
 | [`jinen-v1-small-q5`](https://huggingface.co/togatogah/jinen-v1-small.gguf) | GPT-2 | 90M | 76.5% |
 | [`jinen-v1-xsmall-q5`](https://huggingface.co/togatogah/jinen-v1-xsmall.gguf) | GPT-2 | 26M | 71.0% |
 
