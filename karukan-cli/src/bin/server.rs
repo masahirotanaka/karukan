@@ -49,7 +49,7 @@ struct AppState {
     /// llama.cpp models keyed by `[models]` key (e.g. "jinen-v2-small-q5")
     llamacpp_models: Arc<RwLock<BTreeMap<String, Arc<LlamaCppModel>>>>,
     /// The config's `[conversion] model` key, preferred as the default
-    default_model: Arc<String>,
+    default_model: Arc<str>,
     /// Debug mode enabled (--debug flag)
     debug_mode: bool,
 }
@@ -197,7 +197,7 @@ async fn main() {
         converter: Arc::new(RomajiConverter::new()),
         romaji_input: Arc::new(RwLock::new(String::new())),
         llamacpp_models: Arc::new(RwLock::new(llamacpp_models)),
-        default_model: Arc::new(settings.conversion.model),
+        default_model: Arc::from(settings.conversion.model),
         debug_mode: args.debug,
     };
 
