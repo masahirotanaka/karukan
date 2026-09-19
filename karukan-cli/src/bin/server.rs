@@ -292,7 +292,7 @@ fn default_model_id<'a>(
 ) -> Option<&'a str> {
     models
         .get_key_value(configured)
-        .or_else(|| models.iter().next())
+        .or_else(|| models.first_key_value())
         .map(|(key, _)| key.as_str())
 }
 
