@@ -924,7 +924,7 @@ mod beam_search_tests {
     /// Load a real model, or `None` when it isn't available locally (the
     /// tests are skipped rather than failing offline).
     fn load_model() -> Option<LlamaCppModel> {
-        let source = ModelSource::Hf {
+        let source = ModelSource::HuggingFace {
             repo: "togatogah/jinen-v2-small.gguf".to_string(),
             filename: "jinen-v2-small-Q5_K_M.gguf".to_string(),
         };

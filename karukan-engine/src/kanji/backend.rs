@@ -13,7 +13,7 @@ type Result<T> = super::error::Result<T>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModelSource {
     /// A HuggingFace repo; `tokenizer.json` comes from the same repo.
-    Hf { repo: String, filename: String },
+    HuggingFace { repo: String, filename: String },
     /// A local GGUF file; `tokenizer.json` must sit in the same directory.
     Path(PathBuf),
 }
@@ -23,7 +23,7 @@ impl ModelSource {
     /// are served cache-first and downloaded on a cache miss.
     pub fn resolve(&self) -> Result<(PathBuf, PathBuf)> {
         match self {
-            ModelSource::Hf { repo, filename } => Ok((
+            ModelSource::HuggingFace { repo, filename } => Ok((
                 download_gguf(repo, filename)?,
                 download_gguf(repo, "tokenizer.json")?,
             )),
@@ -158,8 +158,8 @@ impl KanaKanjiConverter {
 mod tests {
     use super::*;
 
-    fn hf_source(repo: &str, filename: &str) -> ModelSource {
-        ModelSource::Hf {
+    fn hugging_face_source(repo: &str, filename: &str) -> ModelSource {
+        ModelSource::HuggingFace {
             repo: repo.to_string(),
             filename: filename.to_string(),
         }
@@ -201,7 +201,7 @@ mod tests {
     #[test]
 
     fn test_default_model_conversion() {
-        let source = hf_source(
+        let source = hugging_face_source(
             "togatogah/jinen-v2-small.gguf",
             "jinen-v2-small-Q5_K_M.gguf",
         );
@@ -226,7 +226,7 @@ mod tests {
 
     fn test_xsmall_special_tokens() {
         use super::super::{CONTEXT_TOKEN, INPUT_START_TOKEN, OUTPUT_START_TOKEN};
-        let source = hf_source(
+        let source = hugging_face_source(
             "togatogah/jinen-v1-xsmall.gguf",
             "jinen-v1-xsmall-Q5_K_M.gguf",
         );
@@ -261,7 +261,7 @@ mod tests {
     #[test]
 
     fn test_xsmall_conversion() {
-        let source = hf_source(
+        let source = hugging_face_source(
             "togatogah/jinen-v1-xsmall.gguf",
             "jinen-v1-xsmall-Q5_K_M.gguf",
         );

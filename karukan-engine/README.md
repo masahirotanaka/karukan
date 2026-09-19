@@ -46,7 +46,7 @@ assert_eq!(result.pending, ""); // まだ確定していないローマ字末尾
 use karukan_engine::{KanaKanjiConverter, ModelSource};
 
 // モデルの読み込み（初回使用時にHuggingFaceからダウンロード）
-let source = ModelSource::Hf {
+let source = ModelSource::HuggingFace {
     repo: "togatogah/jinen-v2-small.gguf".to_string(),
     filename: "jinen-v2-small-Q5_K_M.gguf".to_string(),
 };

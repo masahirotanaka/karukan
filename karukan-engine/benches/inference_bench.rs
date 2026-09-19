@@ -13,7 +13,7 @@ use std::hint::black_box;
 // ============================================================================
 
 fn bench_llamacpp(c: &mut Criterion) {
-    let source = ModelSource::Hf {
+    let source = ModelSource::HuggingFace {
         repo: "togatogah/jinen-v2-small.gguf".to_string(),
         filename: "jinen-v2-small-Q5_K_M.gguf".to_string(),
     };

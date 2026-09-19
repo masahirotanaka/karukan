@@ -47,7 +47,7 @@ fn main() {
             "main(small)",
         ),
     ] {
-        let source = ModelSource::Hf {
+        let source = ModelSource::HuggingFace {
             repo: repo.to_string(),
             filename: filename.to_string(),
         };

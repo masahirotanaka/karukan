@@ -316,7 +316,7 @@ fn test_zenninn_kanji_conversion() {
     println!("Hiragana: {}", hiragana);
 
     // Now try kanji conversion
-    let source = ModelSource::Hf {
+    let source = ModelSource::HuggingFace {
         repo: "togatogah/jinen-v2-small.gguf".to_string(),
         filename: "jinen-v2-small-Q5_K_M.gguf".to_string(),
     };

@@ -48,7 +48,7 @@ pub struct ModelDef(toml::Value);
 /// The table form of a `[models]` entry.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct HfModel {
+struct HuggingFaceModel {
     repo: String,
     filename: String,
 }
@@ -58,8 +58,8 @@ impl ModelDef {
         match &self.0 {
             toml::Value::String(path) => Ok(ModelSource::Path(PathBuf::from(path))),
             toml::Value::Table(_) => {
-                let HfModel { repo, filename } = self.0.clone().try_into()?;
-                Ok(ModelSource::Hf { repo, filename })
+                let HuggingFaceModel { repo, filename } = self.0.clone().try_into()?;
+                Ok(ModelSource::HuggingFace { repo, filename })
             }
             other => anyhow::bail!(
                 "expected a path string or {{ repo, filename }}, got {}",
@@ -593,7 +593,7 @@ num_candidates = 3
         let source = settings.model_source(&settings.conversion.model).unwrap();
         assert_eq!(
             source,
-            ModelSource::Hf {
+            ModelSource::HuggingFace {
                 repo: "togatogah/jinen-v2-small.gguf".to_string(),
                 filename: "jinen-v2-small-Q5_K_M.gguf".to_string(),
             }
