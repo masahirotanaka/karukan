@@ -37,25 +37,48 @@ pub struct Settings {
     pub models: BTreeMap<String, ModelDef>,
 }
 
-/// One `[models.<key>]` entry: a HuggingFace file (`repo` + `filename`) or a
-/// local GGUF (`path`), exactly one of the two.
+/// One `[models]` entry as written: a string (the path of a local GGUF,
+/// `tokenizer.json` beside it) or a table `{ repo, filename }` (a HuggingFace
+/// file, `tokenizer.json` in the same repo). Kept as TOML so a broken entry
+/// fails only when used, naming its own keys.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelDef {
-    pub repo: Option<String>,
-    pub filename: Option<String>,
-    pub path: Option<PathBuf>,
-}
+#[serde(transparent)]
+pub struct ModelDef(toml::Value);
 
 impl ModelDef {
     fn source(&self) -> Result<ModelSource> {
-        match (&self.repo, &self.filename, &self.path) {
-            (Some(repo), Some(filename), None) => Ok(ModelSource::Hf {
-                repo: repo.clone(),
-                filename: filename.clone(),
-            }),
-            (None, None, Some(path)) => Ok(ModelSource::Path(path.clone())),
-            _ => anyhow::bail!("set exactly one of repo + filename, or path"),
+        let table = match &self.0 {
+            toml::Value::String(path) => return Ok(ModelSource::Path(PathBuf::from(path))),
+            toml::Value::Table(table) => table,
+            other => anyhow::bail!(
+                "expected a path string or {{ repo, filename }}, got {}",
+                other.type_str()
+            ),
+        };
+        let unknown: Vec<&str> = table
+            .keys()
+            .map(String::as_str)
+            .filter(|key| !matches!(*key, "repo" | "filename"))
+            .collect();
+        if !unknown.is_empty() {
+            anyhow::bail!(
+                "unknown key \"{}\" (expected repo, filename)",
+                unknown.join("\", \"")
+            );
         }
+        let field = |name: &str| -> Result<String> {
+            let value = table
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("missing field \"{name}\""))?;
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| anyhow::anyhow!("\"{name}\" must be a string"))
+        };
+        Ok(ModelSource::Hf {
+            repo: field("repo")?,
+            filename: field("filename")?,
+        })
     }
 }
 
@@ -309,7 +332,15 @@ impl Settings {
     /// Load settings from a specific file, merged on top of defaults.
     pub fn load_from(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)?;
-        parse_with_defaults(&content)
+        let settings = parse_with_defaults(&content)?;
+        // Surface broken model entries now, without failing the load: a key
+        // that is never used must not cost the rest of the config.
+        for key in settings.models.keys() {
+            if let Err(e) = settings.model_source(key) {
+                warn!("{e:#}");
+            }
+        }
+        Ok(settings)
     }
 
     /// Save settings to the default configuration file
@@ -583,8 +614,8 @@ num_candidates = 3
 [conversion]
 model = "my-model"
 
-[models.my-model]
-path = "/home/user/models/my.gguf"
+[models]
+my-model = "/home/user/models/my.gguf"
 "#
         )
         .unwrap();
@@ -600,14 +631,16 @@ path = "/home/user/models/my.gguf"
 
     #[test]
     fn test_user_model_entry_replaces_default_whole() {
-        // Overriding a default key with a path-only entry must not inherit
-        // the default's repo/filename (that would fail validation).
+        // A user entry under a default key replaces it whole: a path string
+        // drops the default's repo/filename, and a partial table must not
+        // inherit the default's filename.
         let mut file = NamedTempFile::new().unwrap();
         writeln!(
             file,
             r#"
-[models.jinen-v2-small-q5]
-path = "/home/user/models/my.gguf"
+[models]
+jinen-v2-small-q5 = "/home/user/models/my.gguf"
+jinen-v2-xsmall-q5 = {{ repo = "other/repo.gguf" }}
 "#
         )
         .unwrap();
@@ -616,6 +649,11 @@ path = "/home/user/models/my.gguf"
         assert_eq!(
             settings.model_source("jinen-v2-small-q5").unwrap(),
             ModelSource::Path(PathBuf::from("/home/user/models/my.gguf"))
+        );
+        let err = settings.model_source("jinen-v2-xsmall-q5").unwrap_err();
+        assert!(
+            format!("{err:#}").contains("missing field \"filename\""),
+            "{err:#}"
         );
     }
 
@@ -629,24 +667,39 @@ path = "/home/user/models/my.gguf"
     }
 
     #[test]
-    fn test_model_entry_requires_exactly_one_source() {
+    fn test_broken_model_entries_name_their_keys() {
+        // Broken entries load (the rest of the config survives) and fail
+        // only when used, each saying what is wrong with it.
         let mut file = NamedTempFile::new().unwrap();
         writeln!(
             file,
             r#"
-[models.both]
-repo = "owner/repo"
-filename = "m.gguf"
-path = "/tmp/m.gguf"
-
-[models.neither]
+[models]
+no-filename = {{ repo = "owner/repo.gguf" }}
+typo = {{ repo = "owner/repo.gguf", file_name = "m.gguf" }}
+number = 42
 "#
         )
         .unwrap();
 
         let settings = Settings::load_from(file.path()).unwrap();
-        assert!(settings.model_source("both").is_err());
-        assert!(settings.model_source("neither").is_err());
+        let error = |key: &str| format!("{:#}", settings.model_source(key).unwrap_err());
+        assert!(
+            error("no-filename").contains("[models.no-filename]: missing field \"filename\""),
+            "{}",
+            error("no-filename")
+        );
+        assert!(
+            error("typo").contains("unknown key \"file_name\""),
+            "{}",
+            error("typo")
+        );
+        assert!(
+            error("number").contains("expected a path string"),
+            "{}",
+            error("number")
+        );
+        settings.model_source("jinen-v2-small-q5").unwrap();
     }
 
     #[test]

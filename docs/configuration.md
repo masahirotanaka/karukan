@@ -50,10 +50,10 @@ phrases = [                    # フレーズ一覧（書くと既定一覧ご�
 
 ## モデルの定義（[models]）
 
-変換モデルは `[models]` テーブルで定義し、`model` / `light_model` はそのキーを参照します。各エントリは次のどちらか一方を指定します。
+変換モデルは `[models]` テーブルで定義し、`model` / `light_model` はそのキーを参照します。値は 2 通りです。
 
-- `repo` + `filename`: Hugging Face のリポジトリとGGUFファイル名。初回起動時にバックグラウンドで自動ダウンロードされます。`tokenizer.json` は同じリポジトリから読み込みます
-- `path`: ローカルのGGUFファイルのパス。`tokenizer.json` はGGUFと同じディレクトリに置きます
+- 文字列: ローカルの GGUF ファイルのパス。`tokenizer.json` は GGUF と同じディレクトリに置きます
+- `{ repo = "...", filename = "..." }`: Hugging Face のリポジトリと GGUF ファイル名。初回起動時にバックグラウンドで自動ダウンロードされます。`tokenizer.json` は同じリポジトリから読み込みます
 
 既定で以下の4モデルが定義済みです（ユーザーの `config.toml` の `[models]` はキー単位でマージされ、同じキーは上書き、既定のエントリはそのまま残ります）。
 
@@ -70,15 +70,12 @@ phrases = [                    # フレーズ一覧（書くと既定一覧ご�
 [conversion]
 model = "my-model"
 
-# ローカルのGGUFを使う（tokenizer.json を同じディレクトリに置く）
-[models.my-model]
-path = "/home/user/models/my-model.gguf"
-
-# Hugging Faceのリポジトリから使う
-[models.my-hf-model]
-repo = "owner/my-model.gguf"
-filename = "my-model-Q5_K_M.gguf"
+[models]
+my-model = "/home/user/models/my-model.gguf"                                        # ローカルの GGUF
+my-hf-model = { repo = "owner/my-model.gguf", filename = "my-model-Q5_K_M.gguf" }   # Hugging Face
 ```
+
+既定のキーに手元のファイルを当てるなら `jinen-v2-small-q5 = "/path/to/model.gguf"` の 1 行です。壊れたエントリ（`filename` 忘れ、キーの綴り違いなど）はそのキーを使うときにキー名つきのエラーになり、起動時にも警告として記録されます。他のエントリや設定には影響しません。
 
 設定変更後はfcitx5の再起動（macOSは `killall KarukanIME`）で反映されます。
 
