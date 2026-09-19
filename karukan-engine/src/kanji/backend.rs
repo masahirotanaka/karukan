@@ -1,4 +1,4 @@
-//! Backend interface for kanji conversion using llama.cpp
+//! Model source resolution and the kana-kanji converter
 
 use super::error::KanjiError;
 use super::hf_download::download_gguf;
@@ -41,18 +41,8 @@ impl ModelSource {
     }
 }
 
-/// Configuration for kanji conversion
-#[derive(Debug, Clone)]
-pub struct ConversionConfig {
-    /// Maximum number of new tokens to generate
-    pub max_new_tokens: usize,
-}
-
-impl Default for ConversionConfig {
-    fn default() -> Self {
-        Self { max_new_tokens: 50 }
-    }
-}
+/// Cap on the tokens generated per conversion.
+const MAX_NEW_TOKENS: usize = 50;
 
 /// Build a prompt in jinen format.
 ///
@@ -77,7 +67,6 @@ pub fn clean_model_output(text: &str) -> String {
 /// Kanji converter using llama.cpp backend
 pub struct KanaKanjiConverter {
     model: LlamaCppModel,
-    config: ConversionConfig,
     display_name: String,
 }
 
@@ -85,16 +74,10 @@ impl KanaKanjiConverter {
     /// Load the model at `source`. `name` is what the UI shows for it: the
     /// `[models]` key, for a configured model.
     pub fn from_source(source: &ModelSource, name: &str) -> Result<Self> {
-        Self::with_config(source, name, ConversionConfig::default())
-    }
-
-    /// Load with an explicit conversion configuration.
-    pub fn with_config(source: &ModelSource, name: &str, config: ConversionConfig) -> Result<Self> {
         let (gguf, tokenizer) = source.resolve()?;
         let model = LlamaCppModel::from_file(&gguf, &tokenizer)?;
         Ok(KanaKanjiConverter {
             model,
-            config,
             display_name: name.to_string(),
         })
     }
@@ -133,9 +116,7 @@ impl KanaKanjiConverter {
 
         if num_candidates == 1 {
             // Single candidate: use greedy decoding (faster)
-            let output_tokens = self
-                .model
-                .generate(&tokens, self.config.max_new_tokens, eos)?;
+            let output_tokens = self.model.generate(&tokens, MAX_NEW_TOKENS, eos)?;
             let generated = &output_tokens[tokens.len()..];
             let text = self.model.decode(generated, true)?;
             let clean = clean_model_output(&text);
@@ -145,12 +126,9 @@ impl KanaKanjiConverter {
             }
         } else {
             // Multiple candidates: use beam search
-            let results = self.model.generate_beam_search(
-                &tokens,
-                self.config.max_new_tokens,
-                eos,
-                num_candidates,
-            )?;
+            let results =
+                self.model
+                    .generate_beam_search(&tokens, MAX_NEW_TOKENS, eos, num_candidates)?;
 
             for (output_tokens, _score) in results {
                 let text = self.model.decode(&output_tokens, true)?;

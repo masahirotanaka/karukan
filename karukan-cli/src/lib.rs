@@ -5,12 +5,8 @@ use karukan_engine::kanji::LlamaCppModel;
 use karukan_im::config::Settings;
 use std::path::Path;
 
-/// Load a model from a direct GGUF file path or by `[models]` key from the
-/// user's config.toml (falling back to the built-in defaults).
-///
-/// When `gguf` is `Some`, loads that file directly (`tokenizer_json` is
-/// required); otherwise resolves `model_key` through the config's `[models]`
-/// table.
+/// Load `gguf` directly (`tokenizer_json` required), or else the `[models]`
+/// entry `model_key` from the user's config.toml (defaults included).
 pub fn load_llama_model(
     gguf: Option<&Path>,
     tokenizer_json: Option<&Path>,
@@ -27,8 +23,7 @@ pub fn load_llama_model(
     }
 
     eprintln!("Resolving model '{}'...", model_key);
-    let source = Settings::load()?.model_source(model_key)?;
-    let (gguf_path, tok_path) = source.resolve()?;
+    let (gguf_path, tok_path) = Settings::load()?.model_source(model_key)?.resolve()?;
     eprintln!("Model path: {}", gguf_path.display());
     eprintln!("Tokenizer: {}", tok_path.display());
     Ok(LlamaCppModel::from_file_with_n_ctx(

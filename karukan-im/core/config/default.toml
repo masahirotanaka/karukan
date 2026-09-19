@@ -51,8 +51,9 @@ live_conversion = true
 #   ローカルの GGUF: パスの文字列（tokenizer.json を同じディレクトリに置く）
 #   Hugging Face:    { repo = "...", filename = "..." }（tokenizer.json は同じリポジトリから。初回起動時に自動ダウンロード）
 #
-# 自作モデルの追加例:
+# 追加例:
 # [models]
+# jinen-v2-small-q8 = { repo = "togatogah/jinen-v2-small.gguf", filename = "jinen-v2-small-Q8_0.gguf" }
 # my-model = "/home/user/models/my-model.gguf"
 
 [models]

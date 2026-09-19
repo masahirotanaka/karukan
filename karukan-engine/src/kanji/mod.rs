@@ -1,13 +1,11 @@
 //! Kanji conversion using llama.cpp GGUF inference
 
 mod backend;
-pub mod error;
+mod error;
 mod hf_download;
-pub mod llamacpp;
+mod llamacpp;
 
-pub use backend::{
-    ConversionConfig, KanaKanjiConverter, ModelSource, build_jinen_prompt, clean_model_output,
-};
+pub use backend::{KanaKanjiConverter, ModelSource, build_jinen_prompt, clean_model_output};
 pub use error::KanjiError;
 pub use llama_cpp_2::token::LlamaToken;
 pub use llamacpp::{LlamaCppModel, NllScorer};

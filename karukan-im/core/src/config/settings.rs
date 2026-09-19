@@ -13,7 +13,7 @@ use karukan_engine::{
     BracketStyle, DateConfig, ModelSource, PunctuationStyle, SlashStyle, SymbolStyle, WidthRules,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 /// Default configuration TOML embedded from config/default.toml
 const DEFAULT_CONFIG_TOML: &str = include_str!("../../config/default.toml");
@@ -45,40 +45,27 @@ pub struct Settings {
 #[serde(transparent)]
 pub struct ModelDef(toml::Value);
 
+/// The table form of a `[models]` entry.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HfModel {
+    repo: String,
+    filename: String,
+}
+
 impl ModelDef {
     fn source(&self) -> Result<ModelSource> {
-        let table = match &self.0 {
-            toml::Value::String(path) => return Ok(ModelSource::Path(PathBuf::from(path))),
-            toml::Value::Table(table) => table,
+        match &self.0 {
+            toml::Value::String(path) => Ok(ModelSource::Path(PathBuf::from(path))),
+            toml::Value::Table(_) => {
+                let HfModel { repo, filename } = self.0.clone().try_into()?;
+                Ok(ModelSource::Hf { repo, filename })
+            }
             other => anyhow::bail!(
                 "expected a path string or {{ repo, filename }}, got {}",
                 other.type_str()
             ),
-        };
-        let unknown: Vec<&str> = table
-            .keys()
-            .map(String::as_str)
-            .filter(|key| !matches!(*key, "repo" | "filename"))
-            .collect();
-        if !unknown.is_empty() {
-            anyhow::bail!(
-                "unknown key \"{}\" (expected repo, filename)",
-                unknown.join("\", \"")
-            );
         }
-        let field = |name: &str| -> Result<String> {
-            let value = table
-                .get(name)
-                .ok_or_else(|| anyhow::anyhow!("missing field \"{name}\""))?;
-            value
-                .as_str()
-                .map(str::to_string)
-                .ok_or_else(|| anyhow::anyhow!("\"{name}\" must be a string"))
-        };
-        Ok(ModelSource::Hf {
-            repo: field("repo")?,
-            filename: field("filename")?,
-        })
     }
 }
 
@@ -253,8 +240,9 @@ fn parse_with_defaults(user_content: &str) -> Result<Settings> {
     let mut base: toml::Value = toml::from_str(DEFAULT_CONFIG_TOML)?;
     let user: toml::Value = toml::from_str(user_content)?;
     merge_toml(&mut base, &user);
-    // A `[models]` entry replaces the default under the same key whole: one
-    // written with only `path` must not inherit the default's repo/filename.
+    // A `[models]` entry replaces the default under the same key whole: a
+    // partial `{ repo = ... }` must not inherit the default's filename (a
+    // plain string already replaces through `merge_toml`).
     if let Some(user_models) = user.get("models").and_then(toml::Value::as_table)
         && let Some(base_models) = base.get_mut("models").and_then(toml::Value::as_table_mut)
     {
@@ -327,6 +315,16 @@ impl Settings {
 
         debug!("Loading config from {:?}", config_file);
         Self::load_from(&config_file)
+    }
+
+    /// `load`, falling back to the defaults when the config cannot be read:
+    /// an IME must start. The failure is logged, so a typo never silently
+    /// resets every setting.
+    pub fn load_or_default() -> Self {
+        Self::load().unwrap_or_else(|e| {
+            error!("config.toml not loaded, using defaults: {e:#}");
+            Self::default()
+        })
     }
 
     /// Load settings from a specific file, merged on top of defaults.
@@ -607,20 +605,16 @@ num_candidates = 3
 
     #[test]
     fn test_user_model_entry_extends_defaults() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(
-            file,
+        let settings = parse_with_defaults(
             r#"
 [conversion]
 model = "my-model"
 
 [models]
 my-model = "/home/user/models/my.gguf"
-"#
+"#,
         )
         .unwrap();
-
-        let settings = Settings::load_from(file.path()).unwrap();
         assert_eq!(
             settings.model_source("my-model").unwrap(),
             ModelSource::Path(PathBuf::from("/home/user/models/my.gguf"))
@@ -631,30 +625,21 @@ my-model = "/home/user/models/my.gguf"
 
     #[test]
     fn test_user_model_entry_replaces_default_whole() {
-        // A user entry under a default key replaces it whole: a path string
-        // drops the default's repo/filename, and a partial table must not
-        // inherit the default's filename.
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(
-            file,
+        // A user entry under a default key replaces it whole: a partial
+        // table must not inherit the default's filename.
+        let settings = parse_with_defaults(
             r#"
 [models]
 jinen-v2-small-q5 = "/home/user/models/my.gguf"
-jinen-v2-xsmall-q5 = {{ repo = "other/repo.gguf" }}
-"#
+jinen-v2-xsmall-q5 = { repo = "other/repo.gguf" }
+"#,
         )
         .unwrap();
-
-        let settings = Settings::load_from(file.path()).unwrap();
         assert_eq!(
             settings.model_source("jinen-v2-small-q5").unwrap(),
             ModelSource::Path(PathBuf::from("/home/user/models/my.gguf"))
         );
-        let err = settings.model_source("jinen-v2-xsmall-q5").unwrap_err();
-        assert!(
-            format!("{err:#}").contains("missing field \"filename\""),
-            "{err:#}"
-        );
+        assert!(settings.model_source("jinen-v2-xsmall-q5").is_err());
     }
 
     #[test]
@@ -670,27 +655,28 @@ jinen-v2-xsmall-q5 = {{ repo = "other/repo.gguf" }}
     fn test_broken_model_entries_name_their_keys() {
         // Broken entries load (the rest of the config survives) and fail
         // only when used, each saying what is wrong with it.
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(
-            file,
+        let settings = parse_with_defaults(
             r#"
 [models]
-no-filename = {{ repo = "owner/repo.gguf" }}
-typo = {{ repo = "owner/repo.gguf", file_name = "m.gguf" }}
+no-filename = { repo = "owner/repo.gguf" }
+typo = { repo = "owner/repo.gguf", file_name = "m.gguf" }
 number = 42
-"#
+"#,
         )
         .unwrap();
-
-        let settings = Settings::load_from(file.path()).unwrap();
         let error = |key: &str| format!("{:#}", settings.model_source(key).unwrap_err());
         assert!(
-            error("no-filename").contains("[models.no-filename]: missing field \"filename\""),
+            error("no-filename").contains("[models.no-filename]"),
             "{}",
             error("no-filename")
         );
         assert!(
-            error("typo").contains("unknown key \"file_name\""),
+            error("no-filename").contains("missing field `filename`"),
+            "{}",
+            error("no-filename")
+        );
+        assert!(
+            error("typo").contains("unknown field `file_name`"),
             "{}",
             error("typo")
         );

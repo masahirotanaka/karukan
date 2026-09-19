@@ -68,11 +68,11 @@ phrases = [                    # フレーズ一覧（書くと既定一覧ご�
 
 ```toml
 [conversion]
-model = "my-model"
+model = "jinen-v2-small-q8"
 
 [models]
-my-model = "/home/user/models/my-model.gguf"                                        # ローカルの GGUF
-my-hf-model = { repo = "owner/my-model.gguf", filename = "my-model-Q5_K_M.gguf" }   # Hugging Face
+jinen-v2-small-q8 = { repo = "togatogah/jinen-v2-small.gguf", filename = "jinen-v2-small-Q8_0.gguf" }   # Hugging Face（既定より大きい Q8_0 量子化）
+my-model = "/home/user/models/my-model.gguf"                                                            # ローカルの GGUF
 ```
 
 既定のキーに手元のファイルを当てるなら `jinen-v2-small-q5 = "/path/to/model.gguf"` の 1 行です。壊れたエントリ（`filename` 忘れ、キーの綴り違いなど）はそのキーを使うときにキー名つきのエラーになり、起動時にも警告として記録されます。他のエントリや設定には影響しません。

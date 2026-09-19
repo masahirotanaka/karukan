@@ -11,7 +11,7 @@ use karukan_engine::kana::hiragana_to_katakana;
 use karukan_engine::kanji::{LlamaCppModel, LlamaToken, build_jinen_prompt, clean_model_output};
 use karukan_im::config::Settings;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -47,7 +47,7 @@ struct AppState {
     /// Accumulated raw input for incremental conversion
     romaji_input: Arc<RwLock<String>>,
     /// llama.cpp models keyed by `[models]` key (e.g. "jinen-v2-small-q5")
-    llamacpp_models: Arc<RwLock<HashMap<String, Arc<LlamaCppModel>>>>,
+    llamacpp_models: Arc<RwLock<BTreeMap<String, Arc<LlamaCppModel>>>>,
     /// The config's `[conversion] model` key, preferred as the default
     default_model: Arc<String>,
     /// Debug mode enabled (--debug flag)
@@ -142,7 +142,6 @@ struct KanjiConvertResponse {
 struct ModelInfo {
     id: String,
     name: String,
-    model_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,7 +172,7 @@ async fn main() {
 
     // Load every model defined in the config's [models] table.
     let settings = Settings::load().expect("failed to load config.toml");
-    let mut llamacpp_models = HashMap::new();
+    let mut llamacpp_models = BTreeMap::new();
 
     for key in settings.models.keys() {
         match load_model(&settings, key) {
@@ -288,7 +287,7 @@ fn load_model(settings: &Settings, key: &str) -> anyhow::Result<Arc<LlamaCppMode
 /// The model a request without one converts with: the config's
 /// `[conversion] model` if it loaded, else any loaded model.
 fn default_model_id<'a>(
-    models: &'a HashMap<String, Arc<LlamaCppModel>>,
+    models: &'a BTreeMap<String, Arc<LlamaCppModel>>,
     configured: &'a str,
 ) -> Option<&'a str> {
     if models.contains_key(configured) {
@@ -301,17 +300,13 @@ fn default_model_id<'a>(
 async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {
     let llamacpp_models = state.llamacpp_models.read().expect("lock poisoned");
 
-    let mut models: Vec<ModelInfo> = llamacpp_models
+    let models: Vec<ModelInfo> = llamacpp_models
         .keys()
         .map(|model_id| ModelInfo {
             id: model_id.clone(),
             name: model_id.clone(),
-            model_id: model_id.clone(),
         })
         .collect();
-
-    // Sort models by name
-    models.sort_by(|a, b| a.name.cmp(&b.name));
 
     let default_model = default_model_id(&llamacpp_models, &state.default_model)
         .unwrap_or_default()
@@ -650,7 +645,6 @@ async fn llamacpp_convert(
     let token_viz = build_token_viz(&input_tokens, &first_generated_tokens);
 
     let output_token_count = first_generated_tokens.len();
-    let model_info = model_id.to_string();
 
     // Determine which beam search type was used
     let beam_search_type_used = if beam_size == 1 {
@@ -670,7 +664,7 @@ async fn llamacpp_convert(
         katakana: katakana.to_string(),
         inference_time_ms,
         top_k: None,
-        model: model_info,
+        model: model_id.to_string(),
         input_tokens: Some(input_token_count),
         output_tokens: Some(output_token_count),
         tokens: Some(token_viz),

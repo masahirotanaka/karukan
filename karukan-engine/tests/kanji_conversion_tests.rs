@@ -4,8 +4,6 @@
 //!
 //! Note: These tests require downloading models from HuggingFace on first run.
 
-use karukan_engine::kanji::ConversionConfig;
-
 // ============================================================================
 // Helper functions
 // ============================================================================
@@ -25,20 +23,6 @@ fn is_valid_japanese(s: &str) -> bool {
 
 // Re-export clean_model_output for test use
 use karukan_engine::kanji::clean_model_output as clean_output;
-
-// ============================================================================
-// Unit tests (no model download required)
-// ============================================================================
-
-mod unit_tests {
-    use super::*;
-
-    #[test]
-    fn test_conversion_config_defaults() {
-        let config = ConversionConfig::default();
-        assert_eq!(config.max_new_tokens, 50);
-    }
-}
 
 // ============================================================================
 // llama.cpp backend tests
