@@ -117,12 +117,11 @@ impl Keysym {
     }
 }
 
-/// Printable keys are spelled as the character they type. Latin-1 keysyms
-/// are the code point itself; the rest carry the Unicode flag.
+/// Printable keys are spelled as the character they type: a Latin-1
+/// keysym is its code point.
 impl From<char> for Keysym {
     fn from(c: char) -> Self {
-        let cp = c as u32;
-        Keysym(if cp <= 0xff { cp } else { 0x0100_0000 | cp })
+        Keysym(c as u32)
     }
 }
 
@@ -237,12 +236,11 @@ impl KeyEvent {
         if !self.is_printable_press() {
             return None;
         }
-        self.keysym.to_char().map(|c| {
-            if self.modifiers.shift_key && c.is_ascii_alphabetic() {
-                c.to_ascii_uppercase()
-            } else {
-                c
-            }
+        let c = self.keysym.to_char()?;
+        Some(if self.modifiers.shift_key {
+            c.to_ascii_uppercase()
+        } else {
+            c
         })
     }
 }
@@ -272,14 +270,13 @@ mod tests {
         assert_eq!(Keysym::from('1').digit_value(), Some(1));
         assert_eq!(Keysym::from('9').digit_value(), Some(9));
         assert_eq!(Keysym::from('0').digit_value(), None);
-        assert_eq!(Keysym(0x0061).digit_value(), None);
+        assert_eq!(Keysym::from('a').digit_value(), None);
     }
 
     #[test]
     fn test_keysym_from_char() {
         assert_eq!(Keysym::from('a'), Keysym(0x0061));
         assert_eq!(Keysym::from('é'), Keysym(0x00e9));
-        assert_eq!(Keysym::from('あ'), Keysym(0x0100_3042));
     }
 
     #[test]

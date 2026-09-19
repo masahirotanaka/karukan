@@ -131,19 +131,14 @@ impl InputMethodEngine {
             };
         }
 
-        // `:` from Empty enters emoji shortcode mode. Accept both keysym
-        // shapes a layout can emit for `:`: the `colon` keysym directly,
-        // or `semicolon` with shift held.
-        let typed_colon = match key.to_char() {
-            Some(':') => true,
-            Some(';') => key.modifiers.shift_key,
-            _ => false,
-        };
-        if typed_colon && self.mode.current() != InputMode::Alphabet {
-            return self.start_emoji_mode();
-        }
-
         if let Some(ch) = key.to_char() {
+            // `:` from Empty enters emoji shortcode mode. A layout can emit
+            // it as `:` directly, or as `;` with Shift held.
+            if (ch == ':' || (ch == ';' && key.modifiers.shift_key))
+                && self.mode.current() != InputMode::Alphabet
+            {
+                return self.start_emoji_mode();
+            }
             // Shift+letter (an uppercase char) starts the word in direct
             // input. A temporary per-word mode, not a sticky toggle:
             // ModeState remembers the mode to restore when this word is

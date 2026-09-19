@@ -565,16 +565,6 @@ impl InputMethodEngine {
             if let Some(digit) = key.keysym.digit_value() {
                 return self.select_shown_candidate(digit);
             }
-            // Ctrl+Backspace / Ctrl+Delete: delete the selected learning
-            // candidate (the Mac "delete" key is Backspace). A non-learning
-            // selection consumes the chord as a no-op.
-            if matches!(key.keysym, Keysym::BACKSPACE | Keysym::DELETE) {
-                return if self.selected_is_deletable() {
-                    self.delete_selected_candidate_from_history()
-                } else {
-                    EngineResult::consumed()
-                };
-            }
         }
         match key.keysym {
             Keysym::RETURN => self.commit_conversion(),
@@ -587,6 +577,16 @@ impl InputMethodEngine {
             Keysym::UP => self.prev_candidate(),
             Keysym::PAGE_DOWN => self.next_candidate_page(),
             Keysym::PAGE_UP => self.prev_candidate_page(),
+            // Ctrl+Backspace / Ctrl+Delete: delete the selected learning
+            // candidate (the Mac "delete" key is Backspace). A non-learning
+            // selection consumes the chord as a no-op.
+            Keysym::BACKSPACE | Keysym::DELETE if key.modifiers.control_key => {
+                if self.selected_is_deletable() {
+                    self.delete_selected_candidate_from_history()
+                } else {
+                    EngineResult::consumed()
+                }
+            }
             // Inside a narrowed view Backspace shrinks the reading and
             // stays in the view: the mirror of typing-refine, so the list
             // re-expands as the query shrinks. Without a filter it cancels
