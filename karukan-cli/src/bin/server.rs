@@ -42,18 +42,12 @@ struct Args {
 }
 
 #[derive(Clone)]
-struct LlamaCppModelInfo {
-    model: Arc<LlamaCppModel>,
-    display_name: String,
-}
-
-#[derive(Clone)]
 struct AppState {
     converter: Arc<RomajiConverter>,
     /// Accumulated raw input for incremental conversion
     romaji_input: Arc<RwLock<String>>,
     /// llama.cpp models keyed by `[models]` key (e.g. "jinen-v2-small-q5")
-    llamacpp_models: Arc<RwLock<HashMap<String, LlamaCppModelInfo>>>,
+    llamacpp_models: Arc<RwLock<HashMap<String, Arc<LlamaCppModel>>>>,
     /// The config's `[conversion] model` key, preferred as the default
     default_model: Arc<String>,
     /// Debug mode enabled (--debug flag)
@@ -280,7 +274,7 @@ async fn health_handler() -> impl IntoResponse {
 }
 
 /// Resolve and load one `[models]` entry.
-fn load_model(settings: &Settings, key: &str) -> anyhow::Result<LlamaCppModelInfo> {
+fn load_model(settings: &Settings, key: &str) -> anyhow::Result<Arc<LlamaCppModel>> {
     let (gguf, tokenizer) = settings.model_source(key)?.resolve()?;
     tracing::info!(
         "Loading llama.cpp model '{}' from {} (tokenizer: {})...",
@@ -288,16 +282,13 @@ fn load_model(settings: &Settings, key: &str) -> anyhow::Result<LlamaCppModelInf
         gguf.display(),
         tokenizer.display()
     );
-    Ok(LlamaCppModelInfo {
-        model: Arc::new(LlamaCppModel::from_file(&gguf, &tokenizer)?),
-        display_name: key.to_string(),
-    })
+    Ok(Arc::new(LlamaCppModel::from_file(&gguf, &tokenizer)?))
 }
 
 /// The model a request without one converts with: the config's
 /// `[conversion] model` if it loaded, else any loaded model.
 fn default_model_id<'a>(
-    models: &'a HashMap<String, LlamaCppModelInfo>,
+    models: &'a HashMap<String, Arc<LlamaCppModel>>,
     configured: &'a str,
 ) -> Option<&'a str> {
     if models.contains_key(configured) {
@@ -311,10 +302,10 @@ async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {
     let llamacpp_models = state.llamacpp_models.read().expect("lock poisoned");
 
     let mut models: Vec<ModelInfo> = llamacpp_models
-        .iter()
-        .map(|(model_id, info)| ModelInfo {
+        .keys()
+        .map(|model_id| ModelInfo {
             id: model_id.clone(),
-            name: info.display_name.clone(),
+            name: model_id.clone(),
             model_id: model_id.clone(),
         })
         .collect();
@@ -394,27 +385,24 @@ async fn tokenize_handler(
     // Get the first available llama.cpp model or the specified one
     let models_guard = state.llamacpp_models.read().expect("lock poisoned");
 
-    let (model_id, model_info) = if let Some(ref model_str) = req.model {
-        let info = models_guard.get(model_str).ok_or_else(|| {
+    let (model_id, model) = if let Some(ref model_str) = req.model {
+        let model = models_guard.get(model_str).ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
                 format!("llama.cpp model '{}' not loaded", model_str),
             )
         })?;
-        (model_str.clone(), info)
+        (model_str.clone(), model)
     } else {
         // Use the first available model
-        let (id, info) = models_guard.iter().next().ok_or_else(|| {
+        let (id, model) = models_guard.iter().next().ok_or_else(|| {
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "No llama.cpp models loaded".to_string(),
             )
         })?;
-        (id.clone(), info)
+        (id.clone(), model)
     };
-
-    let model = &model_info.model;
-    let display_name = model_info.display_name.clone();
 
     // Tokenize the input
     let tokens = model.tokenize(&req.text).map_err(|e| {
@@ -439,7 +427,7 @@ async fn tokenize_handler(
     Ok(Json(TokenizeResponse {
         tokens: token_infos,
         prompt: req.text,
-        model: format!("{} ({})", display_name, model_id),
+        model: model_id,
     }))
 }
 
@@ -452,14 +440,12 @@ async fn llamacpp_convert(
 ) -> Result<Json<KanjiConvertResponse>, (StatusCode, String)> {
     // Get the llama.cpp model
     let models_guard = state.llamacpp_models.read().expect("lock poisoned");
-    let model_info = models_guard.get(model_id).ok_or_else(|| {
+    let model = models_guard.get(model_id).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
             format!("llama.cpp model '{}' not loaded", model_id),
         )
     })?;
-    let model = &model_info.model;
-    let display_name = model_info.display_name.clone();
 
     // Helper: build token visualization from input and output token slices
     let build_token_viz = |input_toks: &[LlamaToken], output_toks: &[LlamaToken]| {
@@ -664,7 +650,7 @@ async fn llamacpp_convert(
     let token_viz = build_token_viz(&input_tokens, &first_generated_tokens);
 
     let output_token_count = first_generated_tokens.len();
-    let model_info = display_name;
+    let model_info = model_id.to_string();
 
     // Determine which beam search type was used
     let beam_search_type_used = if beam_size == 1 {

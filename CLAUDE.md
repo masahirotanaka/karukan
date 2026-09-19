@@ -107,7 +107,7 @@ cargo clippy --workspace  # Lint all crates
   - `style.rs` — `SymbolStyle`: which symbol the `,` `.` `/` `[` `]` keys type
   - `converter.rs` — Stateless converter (`convert`/`flush_pending`/`starts_rule`)
 - `kanji/` — Kana-kanji conversion via llama.cpp
-  - `backend.rs` — `ModelSource` (HF repo+filename or local GGUF path) + Backend + KanaKanjiConverter
+  - `backend.rs` — `ModelSource` (HF repo+filename or local GGUF path) + KanaKanjiConverter
   - `llamacpp.rs` — GGUF inference
   - `hf_download.rs` — HuggingFace model download
   - `error.rs` — KanjiError type
