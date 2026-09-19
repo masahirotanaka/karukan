@@ -4,16 +4,16 @@ use super::*;
 // --- ConversionStrategy tests ---
 
 /// Helper to create a config with specific thresholds
-fn strategy_config(short_input_threshold: usize, beam_width: usize) -> EngineConfig {
+fn strategy_config(chunk_chars: usize, beam_width: usize) -> EngineConfig {
     EngineConfig {
-        short_input_threshold,
+        chunk_chars,
         beam_width,
         num_candidates: 9,
         ..EngineConfig::default()
     }
 }
 
-/// Default test config: short_input_threshold=10, beam_width=3, max_latency_ms=100
+/// Default test config: chunk_chars=10, beam_width=3, max_latency_ms=100
 fn default_strategy_config() -> EngineConfig {
     strategy_config(10, 3)
 }
@@ -73,19 +73,20 @@ fn strategy_auto_suggest_adaptive_true_even_short_input() {
 // --- Explicit conversion (num_candidates > 1) ---
 
 #[test]
-fn strategy_explicit_adaptive_true_returns_light_model() {
+fn strategy_explicit_adaptive_true_returns_light_beam() {
     let config = default_strategy_config();
-    // adaptive=true → LightModelOnly (main model was too slow)
+    // adaptive=true → LightModelBeam: the downgrade drops the slow main
+    // model but keeps the beam-width candidate count
     assert_eq!(
         determine_conversion_strategy(5, 9, true, true, &config),
-        ConversionStrategy::LightModelOnly,
+        ConversionStrategy::LightModelBeam { beam_width: 3 },
     );
 }
 
 #[test]
 fn strategy_explicit_short_reading_returns_parallel_beam() {
     let config = default_strategy_config();
-    // adaptive=false, reading_tokens=5 <= 10 → ParallelBeam
+    // adaptive=false, reading_chars=5 <= 10 → ParallelBeam
     assert_eq!(
         determine_conversion_strategy(5, 9, true, false, &config),
         ConversionStrategy::ParallelBeam { beam_width: 3 },
@@ -95,7 +96,7 @@ fn strategy_explicit_short_reading_returns_parallel_beam() {
 #[test]
 fn strategy_explicit_long_reading_returns_light_model() {
     let config = default_strategy_config();
-    // adaptive=false, reading_tokens=15 > 10 → LightModelOnly
+    // adaptive=false, reading_chars=15 > 10 → LightModelOnly
     assert_eq!(
         determine_conversion_strategy(15, 9, true, false, &config),
         ConversionStrategy::LightModelOnly,
@@ -105,12 +106,12 @@ fn strategy_explicit_long_reading_returns_light_model() {
 #[test]
 fn strategy_explicit_reading_boundary_at_threshold() {
     let config = default_strategy_config();
-    // reading_tokens == threshold → ParallelBeam (<=)
+    // reading_chars == threshold → ParallelBeam (<=)
     assert_eq!(
         determine_conversion_strategy(10, 9, true, false, &config),
         ConversionStrategy::ParallelBeam { beam_width: 3 },
     );
-    // reading_tokens == threshold + 1 → LightModelOnly
+    // reading_chars == threshold + 1 → LightModelOnly
     assert_eq!(
         determine_conversion_strategy(11, 9, true, false, &config),
         ConversionStrategy::LightModelOnly,
@@ -144,10 +145,10 @@ fn strategy_beam_width_capped_by_beam_width() {
 #[test]
 fn strategy_adaptive_flag_overrides_short_input_for_explicit() {
     let config = default_strategy_config();
-    // Short reading but adaptive=true → LightModelOnly (not ParallelBeam)
+    // Short reading but adaptive=true → LightModelBeam (not ParallelBeam)
     assert_eq!(
         determine_conversion_strategy(3, 9, true, true, &config),
-        ConversionStrategy::LightModelOnly,
+        ConversionStrategy::LightModelBeam { beam_width: 3 },
     );
 }
 
@@ -226,4 +227,42 @@ fn test_adaptive_flag_reset_after_commit_and_new_input() {
 fn test_config_default_max_latency_ms() {
     let config = EngineConfig::default();
     assert_eq!(config.max_latency_ms, 100);
+}
+
+#[test]
+fn test_light_request_reuses_the_main_models_cache_entry() {
+    // After a latency downgrade the light model asks for readings the main
+    // model already converted (typing filled those entries). Serving them
+    // from the main entry keeps backspacing through the word inference-free
+    // — and at the better model's quality.
+    let mut engine = InputMethodEngine::new();
+    seed_model_cache(&mut engine, "アイ", "", &["愛"]);
+
+    assert_eq!(
+        engine.cached_result(ModelRole::Light, 1, "アイ", ""),
+        Some(vec!["愛".to_string()]),
+    );
+    // A wider beam is a different computation: no substitution.
+    assert_eq!(engine.cached_result(ModelRole::Light, 3, "アイ", ""), None);
+}
+
+#[test]
+fn test_main_request_never_reuses_a_light_cache_entry() {
+    // The reverse substitution would silently downgrade quality.
+    let mut engine = InputMethodEngine::new();
+    engine.conversion_cache.insert(
+        crate::core::engine::cache::ConversionCacheKey {
+            katakana: "アイ".to_string(),
+            lctx: String::new(),
+            model: ModelRole::Light,
+            beam_width: 1,
+        },
+        vec!["藍".to_string()],
+    );
+
+    assert_eq!(engine.cached_result(ModelRole::Main, 1, "アイ", ""), None);
+    assert_eq!(
+        engine.cached_result(ModelRole::Light, 1, "アイ", ""),
+        Some(vec!["藍".to_string()]),
+    );
 }

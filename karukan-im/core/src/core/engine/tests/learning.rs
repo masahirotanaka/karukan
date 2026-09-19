@@ -4,30 +4,15 @@
 //! Tab: skip learning candidates (lets users escape stale learned entries).
 //! Ctrl+Delete: delete the selected learning candidate from the history.
 
-use karukan_engine::{LearningCache, LearningConfig};
-
 use super::*;
 use crate::core::engine::display::LEARNING_DELETE_HINT;
-
-/// Engine seeded with a learning entry `reading → surface`, no kanji model.
-/// We bypass `init.rs` (which gates learning on settings + file I/O) and just
-/// inject a populated `LearningCache` directly — these tests assert the
-/// build_conversion_candidates branching, not the load path.
-fn engine_with_learned(reading: &str, surface: &str) -> InputMethodEngine {
-    let mut engine = InputMethodEngine::new();
-    engine.converters.kanji = None;
-    let mut cache = LearningCache::new(LearningConfig::default());
-    cache.record(reading, surface);
-    engine.learning = Some(cache);
-    engine
-}
 
 #[test]
 fn build_candidates_includes_learning_when_not_skipped() {
     let mut engine = engine_with_learned("あい", "藍");
 
     let texts: Vec<String> = engine
-        .build_conversion_candidates("あい", "あい", "", 9, false)
+        .build_conversion_candidates("あい", "あい", "", 9, LearningLookup::Use)
         .into_iter()
         .map(|c| c.text)
         .collect();
@@ -44,7 +29,7 @@ fn build_candidates_omits_learning_when_skipped() {
     let mut engine = engine_with_learned("あい", "藍");
 
     let texts: Vec<String> = engine
-        .build_conversion_candidates("あい", "あい", "", 9, true)
+        .build_conversion_candidates("あい", "あい", "", 9, LearningLookup::Skip)
         .into_iter()
         .map(|c| c.text)
         .collect();

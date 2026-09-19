@@ -5,17 +5,20 @@
 ```toml
 [conversion]
 live_conversion = true          # ライブ変換を起動時に有効化（Ctrl+Shift+L で実行中も切替。既定ON）
-composing_chunk_len = 30        # ライブ変換で1回のモデル変換が扱う読みの最大文字数（= 1キーあたりレイテンシの上限）
+chunk_chars = 30                # 一度にAI変換する Chunk の最大文字数（[Chunk](chunking.md) 参照）
+chunk_symbols = 1               # Chunk に残せる記号（、。！？など）の数
+chunk_digits = 0                # Chunk に残せる数字の桁数（0 = 数字はAI変換にかけない）
+chunk_alphabets = 0             # Chunk に残せる英字の数（0 = 英字はAI変換にかけない）
 strategy = "adaptive"           # 変換ストラテジー（adaptive / light / main）
 num_candidates = 9              # 変換候補数（Space押下時）
 n_threads = 4                   # 推論スレッド数（0 = 全コア使用）
-model = "jinen-v2-small-q5"     # メインモデル（モデルID or GGUFパス）
-light_model = "jinen-v2-xsmall-q5"  # 軽量モデル（ビームサーチ・長文用）
+model = "jinen-v2-small-q5"     # メインモデル（[models] のキーを指定）
+light_model = "jinen-v2-xsmall-q5"  # 軽量モデル（ビームサーチ・長文用。[models] のキーを指定）
 use_context = true              # Surrounding Textを変換に使用する
-max_context_length = 10         # コンテキストの最大文字数
+context_chars = 10              # 変換に使う前後テキストの最大文字数
 persona = ""                    # 変換ペルソナ（例: "プログラミング"。[Conversion Persona](#conversion-persona) 参照）
-short_input_threshold = 10      # ビームサーチを使うトークン数の上限
-beam_width = 3                  # ビーム幅
+beam_chars = 30                 # 別候補を出す範囲の文字数（Chunk単位で後ろからまとめる）
+beam_width = 3                  # 別候補の本数
 max_latency_ms = 100            # メインモデルの許容レイテンシ（ms）。超過時は軽量モデルに自動切替（0 = 無効）
 dict_path = "/path/to/dict.bin" # システム辞書パス（省略時はデータディレクトリの dict.bin。[Dictionary](dictionary.md) 参照）
 
@@ -23,26 +26,104 @@ dict_path = "/path/to/dict.bin" # システム辞書パス（省略時はデー�
 enabled = true                 # 変換学習の有効/無効
 max_entries = 10000            # 学習エントリの最大数
 max_surface_chars = 50         # 学習する変換結果の最大文字数
+
+[symbol]                       # どの記号を打つか（[記号・半角全角](symbols.md) 参照）
+punctuation = "、。"            # 「,」「.」キーが入力する句読点（"，．" / "、．" / "，。"）
+bracket = "「」"                # 「[」「]」キーが入力する括弧（"[]"）
+slash = "・"                    # 「/」キーが入力する記号（"/"）
+space = "half"                 # かな入力中のスペースキーが入力する空白（"full" / "half"）
+
+[width]                        # かな入力中の出力幅（"half" / "full"）
+kana_symbol = "full"             # 。、「」・
+ascii_symbol = "full"          # ?! ,. (){}[] @ : ~ ほかの記号
+digit = "half"                 # 0-9
+
+[date]                         # 日付・時刻の変換（[日付・時刻](date.md) 参照）
+formats = ["{YEAR}/{MONTH}/{DATE}", "{WEEKDAY}曜日"]  # 共有フォーマット
+phrases = [                    # フレーズ一覧（書くと既定一覧ごと置き換え）
+    { reading = "きょう", offset_days = 0 },
+    { reading = "いま", formats = ["{HOUR}:{MINUTE}"] },
+]
 ```
-
-`model` / `light_model` に指定できるモデルIDは以下です（指定したモデルは初回利用時にHugging Faceから自動ダウンロードされます）。設定変更後はfcitx5の再起動（macOSは `killall KarukanIME`）で反映されます。
-
-| モデルID | ベースモデル | パラメータ数 | Accuracy@1 (NFKC) |
-|---------|-----------|-----------|------:|
-| [`jinen-v2-small-q5`](https://huggingface.co/togatogah/jinen-v2-small.gguf)（デフォルト） | Qwen3 | 109M | 86.0% |
-| [`jinen-v2-xsmall-q5`](https://huggingface.co/togatogah/jinen-v2-xsmall.gguf) | Qwen3 | 36M | 79.0% |
-| [`jinen-v1.1-beta-q5`](https://huggingface.co/togatogah/jinen-v1.1-beta.gguf) | Qwen3 | 109M（beta） | 86.0% |
-| [`jinen-v1-small-q5`](https://huggingface.co/togatogah/jinen-v1-small.gguf) | GPT-2 | 90M | 76.5% |
-| [`jinen-v1-xsmall-q5`](https://huggingface.co/togatogah/jinen-v1-xsmall.gguf) | GPT-2 | 26M | 71.0% |
 
 > [!NOTE]
 > 上記は主要な設定項目の抜粋です。全項目の正確な既定値と説明は [`config/default.toml`](../karukan-im/core/config/default.toml) を参照してください（各設定行に日本語コメント付き）。
+
+## モデルの定義（[models]）
+
+変換モデルは `[models]` テーブルで定義し、`model` / `light_model` はそのキーを参照します。値は 2 通りです。
+
+- 文字列: ローカルの GGUF ファイルのパス。`tokenizer.json` は GGUF と同じディレクトリに置きます
+- `{ repo = "...", filename = "..." }`: Hugging Face のリポジトリと GGUF ファイル名。初回起動時にバックグラウンドで自動ダウンロードされます。`tokenizer.json` は同じリポジトリから読み込みます
+
+既定で以下の4モデルが定義済みです（ユーザーの `config.toml` の `[models]` はキー単位でマージされ、同じキーは上書き、既定のエントリはそのまま残ります）。
+
+| モデルキー | ベースモデル | パラメータ数 | Accuracy@1 (NFKC) |
+|---------|-----------|-----------|------:|
+| [`jinen-v2-small-q5`](https://huggingface.co/togatogah/jinen-v2-small.gguf)（デフォルト） | Qwen3 | 109M | 86.0% |
+| [`jinen-v2-xsmall-q5`](https://huggingface.co/togatogah/jinen-v2-xsmall.gguf) | Qwen3 | 36M | 79.0% |
+| [`jinen-v1-small-q5`](https://huggingface.co/togatogah/jinen-v1-small.gguf) | GPT-2 | 90M | 76.5% |
+| [`jinen-v1-xsmall-q5`](https://huggingface.co/togatogah/jinen-v1-xsmall.gguf) | GPT-2 | 26M | 71.0% |
+
+自作モデルを使うには `[models]` にエントリを追加して `model` から参照します。
+
+```toml
+[conversion]
+model = "jinen-v2-small-q8"
+
+[models]
+jinen-v2-small-q8 = { repo = "togatogah/jinen-v2-small.gguf", filename = "jinen-v2-small-Q8_0.gguf" }
+my-model = "/home/user/models/my-model.gguf"
+```
+
+既定のモデルを差し替えるには同じキーに書きます（`jinen-v2-small-q5 = "/path/to/model.gguf"`）。不正なエントリは起動時のログと、そのモデルを使うときのエラーに出ます。
+
+設定変更後はfcitx5の再起動（macOSは `killall KarukanIME`）で反映されます。
 
 ## Live Conversion
 
 入力と同時にかな漢字変換の結果をプリエディットへリアルタイム表示します（Spaceを押さずに変換が進む）。`Ctrl+Shift+L` でON/OFFを切り替えられ、既定では `live_conversion = true` で有効です。
 
-長文入力でも1キーあたりのレイテンシを一定に保つため、変換中のバッファを内部で最大 `composing_chunk_len` 文字（既定30）のチャンクに分割し、編集した箇所のチャンクだけを再変換します。チャンクは内部的な分割で、ユーザーには連続した1つのプリエディットとして見えます。記号・数字の連続は日本語とは別チャンクに分けてそのまま通すため、`123456` のような並びが変換で崩れることはありません。
+入力中の文が長くなっても変換時間が伸びないよう、変換は一定の長さごとの Chunk に区切って実行されます。Chunk の決まり方、表示のちらつきを止める手動区切り、`chunk_*` の調整方法は [Chunk](chunking.md) を参照してください。
+
+## 記号・半角全角
+
+`[symbol]` はキーが入力する記号を選びます（句読点 `、。` / `，．`、括弧 `「」` / `[]`、`/` キーの `・` / `/`、スペースの全角・半角）。`[width]` は出力される文字の幅を、かなと組で使う記号（`。、「」・`）・それ以外の記号・数字の3種類について `"half"` か `"full"` で指定します。効くのはかな入力中だけで、英字モード（Shift+英字）と絵文字モードでは打ったとおりの半角が出ます。
+
+既定はかな入力が全角、数字だけ半角です（`(a)` → `（あ）`、`heya123` → `へや123`）。
+
+既定はかな入力が全角、数字だけ半角です（`(a)` → `（あ）`、`heya123` → `へや123`）。切り替えたときに何がどう変わるか、「記号はすべて半角」のような設定例は [記号・半角全角](symbols.md) を参照してください。
+
+## 日付・時刻
+
+「きょう」「あした」「いま」などを変換すると日付・時刻の候補が出ます（`きょう` → `2026/09/06`・`令和8年9月6日`・`日曜日` など）。フレーズは `[date]` の `phrases` に読みと `offset_days`（今日±何日）で登録し、出力形式は `{YEAR}年{MONTH:bare}月` のようなフォーマットで指定します（`:bare` でゼロ埋めなし、`:kanji` で漢数字）。既定フレーズ・フォーマット一覧と設定例は [日付・時刻](date.md) を参照してください。
+
+## 候補ウィンドウ
+
+```toml
+[display]
+candidate_window = "always"     # "conversion" にすると Space で変換を始めるまで開かない
+```
+
+既定では入力中から候補ウィンドウが開き、学習・辞書・AI の候補を Ctrl+1〜9 で選べます。`"conversion"` にすると入力中は開かず、Space で変換を始めたときだけ開きます。補助テキストも候補ウィンドウの一部なので一緒に出なくなります。絵文字モードの候補は設定に関わらず表示されます。
+
+## 詳細表示（verbose）
+
+```toml
+[display]
+verbose = false                 # 補助テキストに詳細を出す（Ctrl+Shift+V で切替）
+```
+
+補助テキストには既定では、変換に必要な情報だけが表示されます。入力モード、入力の状態、編集中の Chunk の読みと文字数カウンタ、選択中の候補がどこから来たか、候補のページ番号です。入力中と変換中で同じ形式です（[Chunking](chunking.md) 参照）。
+
+開発や設定の調整で内部の動きを確認したいときは、`Ctrl+Shift+V` で詳細表示に切り替えます。押した時点で表示が変わります（起動時から有効にするには `[display] verbose = true`）。詳細表示では次の情報が加わります。
+
+| 項目 | 例 | 読み方 |
+|------|-----|--------|
+| ビームサーチの対象 | `🎯 うえ 2/30` | 変換中の読みの表示が入れ替わる。🎯 の後ろ（`うえ`）にだけ別候補が出る。それより前は表示中の変換のまま。`2/30` は対象の文字数と `beam_chars` の値 |
+| 推論時間 | `推論: 41ms key: 45ms` | モデルの呼び出しにかかった時間と、その打鍵の処理全体にかかった時間。キャッシュに当たった場合、推論は `0ms` になる |
+| モデル名 | `jinen-v2-small-q5` | 表示中の候補を出したモデル（`[models]` のキー） |
+| モデルに渡した文脈 | `lctx: 昨日は` | 変換時に前方の文脈としてモデルへ渡した文字列 |
 
 ## Conversion Persona
 

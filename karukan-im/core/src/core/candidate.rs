@@ -18,6 +18,8 @@ pub enum CandidateSource {
     Dictionary,
     /// Rewriter-generated variant (half-width katakana, symbol)
     Rewriter,
+    /// Date/time candidate rendered from the clock (`[date]` phrases)
+    Date,
     /// Hiragana/katakana fallback
     Fallback,
 }
@@ -32,6 +34,22 @@ impl CandidateSource {
             CandidateSource::Model => "\u{1F916} AI",                  // 🤖 AI
             CandidateSource::Dictionary => "\u{1F4DA} \u{8F9E}\u{66F8}", // 📚 辞書
             CandidateSource::Rewriter => "\u{1F504} \u{5909}\u{63DB}", // 🔄 変換
+            CandidateSource::Date => "\u{1F4C5} \u{65E5}\u{4ED8}",     // 📅 日付
+            CandidateSource::Fallback => "",
+        }
+    }
+
+    /// Short glyph for tight spots like the Ctrl+R filter header in the
+    /// conversion aux text. Empty for Fallback, which has no view of its
+    /// own — its kana ride at the tail of the rewriter view.
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            CandidateSource::UserDictionary => "\u{1F464}", // 👤
+            CandidateSource::Learning => "\u{1F4DD}",       // 📝
+            CandidateSource::Model => "\u{1F916}",          // 🤖
+            CandidateSource::Dictionary => "\u{1F4DA}",     // 📚
+            CandidateSource::Rewriter => "\u{1F504}",       // 🔄
+            CandidateSource::Date => "\u{1F4C5}",           // 📅
             CandidateSource::Fallback => "",
         }
     }
@@ -40,6 +58,13 @@ impl CandidateSource {
     /// history with Ctrl+Backspace / Ctrl+Delete.
     pub fn is_deletable(&self) -> bool {
         matches!(self, CandidateSource::Learning)
+    }
+
+    /// Whether committing a candidate from this source is recorded in the
+    /// learning cache. Date/time candidates are rendered from the clock, so
+    /// a recorded one would resurface later as a stale date.
+    pub fn is_learnable(&self) -> bool {
+        !matches!(self, CandidateSource::Date)
     }
 }
 
@@ -90,18 +115,6 @@ impl Candidate {
     }
 }
 
-impl From<String> for Candidate {
-    fn from(text: String) -> Self {
-        Self::new(text)
-    }
-}
-
-impl From<&str> for Candidate {
-    fn from(text: &str) -> Self {
-        Self::new(text)
-    }
-}
-
 /// A list of candidates with pagination and selection support
 #[derive(Debug, Clone)]
 pub struct CandidateList {
@@ -126,7 +139,8 @@ impl CandidateList {
         }
     }
 
-    /// Create a candidate list from strings
+    /// Create a candidate list from strings (test fixture).
+    #[cfg(test)]
     pub fn from_strings(strings: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self::new(strings.into_iter().map(Candidate::new).collect())
     }
@@ -275,15 +289,9 @@ impl CandidateList {
         }
     }
 
-    /// Reset cursor to beginning
-    pub fn reset(&mut self) {
-        self.cursor = 0;
-    }
-
-    /// Update the candidate list with new candidates
-    pub fn update(&mut self, candidates: Vec<Candidate>) {
-        self.candidates = candidates;
-        self.cursor = 0;
+    /// Move the cursor to `cursor`, clamped into the list (0 when empty).
+    pub fn set_cursor(&mut self, cursor: usize) {
+        self.cursor = cursor.min(self.candidates.len().saturating_sub(1));
     }
 }
 
