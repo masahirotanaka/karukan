@@ -551,6 +551,8 @@ impl InputMethodEngine {
             // X11) prev-candidate for mozc-compatible muscle memory.
             Keysym::ISO_LEFT_TAB => self.prev_candidate(),
             Keysym::TAB if key.modifiers.shift_key => self.prev_candidate(),
+            // Shift+Space steps back the way Space steps forward.
+            Keysym::SPACE if shift_active => self.prev_candidate(),
             Keysym::SPACE | Keysym::DOWN | Keysym::TAB => self.next_candidate(),
             Keysym::UP => self.prev_candidate(),
             Keysym::PAGE_DOWN => self.next_candidate_page(),
