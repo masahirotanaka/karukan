@@ -71,8 +71,8 @@ phrases = [                    # フレーズ一覧（書くと既定一覧ご�
 model = "jinen-v2-small-q8"
 
 [models]
-jinen-v2-small-q8 = { repo = "togatogah/jinen-v2-small.gguf", filename = "jinen-v2-small-Q8_0.gguf" }   # Hugging Face（既定より大きい Q8_0 量子化）
-my-model = "/home/user/models/my-model.gguf"                                                            # ローカルの GGUF
+jinen-v2-small-q8 = { repo = "togatogah/jinen-v2-small.gguf", filename = "jinen-v2-small-Q8_0.gguf" }
+my-model = "/home/user/models/my-model.gguf"
 ```
 
 既定のモデルを差し替えるには同じキーに書きます（`jinen-v2-small-q5 = "/path/to/model.gguf"`）。不正なエントリは起動時のログと、そのモデルを使うときのエラーに出ます。
