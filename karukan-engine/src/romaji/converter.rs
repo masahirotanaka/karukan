@@ -64,8 +64,8 @@ impl RomajiConverter {
         }
     }
 
-    /// Force-convert leftover pending input (`ltu` → っ); characters with no
-    /// rule pass through literally (a trailing `n` stays `n`).
+    /// Force-convert leftover pending input (`ltu` → っ, a trailing `n` →
+    /// `ん`); characters with no rule pass through literally.
     pub fn flush_pending(&self, pending: &str) -> String {
         let mut buffer = pending.to_string();
         let mut result = String::new();
@@ -75,6 +75,16 @@ impl RomajiConverter {
             if let Some(h) = search.output {
                 result.push_str(h);
                 buffer.drain(..search.matched_len);
+            } else if buffer.starts_with('n') {
+                // A stranded `n` is ん. Nothing can extend it any more —
+                // this is the flush — and every other Japanese IME ends a
+                // word this way. Leaving it literal makes one dropped
+                // keystroke commit a latin letter into Japanese text
+                // (`nihon` → にほn). It cannot live in the rule table:
+                // `search_longest` would match the `n` of `nya` and fire
+                // ん before にゃ could form.
+                result.push('ん');
+                buffer.remove(0);
             } else {
                 result.push(buffer.remove(0));
             }
@@ -336,7 +346,13 @@ mod tests {
         assert_eq!(c.flush_pending("k"), "k");
         assert_eq!(c.flush_pending("ltu"), "っ");
         assert_eq!(c.convert_flush("k"), "k");
-        assert_eq!(c.convert_flush("kan"), "かn");
+        // A trailing `n` settles as ん: nothing can extend it any more.
+        assert_eq!(c.convert_flush("kan"), "かん");
+        assert_eq!(c.flush_pending("n"), "ん");
+        // …but while it is still live it waits, so `na` is not `んa`.
+        assert_eq!(conv("n"), ("".to_string(), "n".to_string()));
+        assert_eq!(c.convert_flush("na"), "な");
+        assert_eq!(c.convert_flush("nihon"), "にほん");
     }
 
     #[test]

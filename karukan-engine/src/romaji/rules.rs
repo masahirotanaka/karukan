@@ -197,6 +197,9 @@ pub fn build_rules(style: SymbolStyle) -> TrieNode {
     trie.insert("nn", "ん");
     trie.insert("n'", "ん");
     trie.insert("xn", "ん");
+    // No bare `n` rule: `search_longest` would then match the `n` of
+    // `nya` and fire ん before `にゃ` could form. A lone `n` becomes ん at
+    // the flush instead — see `RomajiConverter::flush_pending`.
 
     // H-row
     trie.insert("ha", "は");

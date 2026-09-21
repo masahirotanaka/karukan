@@ -12,6 +12,17 @@ use super::*;
 /// Maximum number of learning candidates to show
 const MAX_LEARNING_CANDIDATES: usize = 3;
 
+/// Annotation on a candidate converted from a repaired reading rather
+/// than the one typed.
+const CORRECTION_LABEL: &str = "もしかして";
+
+/// How many repaired readings one conversion may try. Each is a model
+/// call, so the cap is what keeps a dropped keystroke from costing a
+/// conversion per `n` in the word. Two covers a word with a mistake in
+/// it and the same word with the mistake somewhere else; a reading that
+/// needs three tries is not a typo any more.
+const MAX_CORRECTION_VARIANTS: usize = 2;
+
 /// Max predictive (prefix-extending) dictionary candidates in the
 /// composing suggestion list. The conversion list is uncapped — the full
 /// ranked set goes into the paged candidate window.
@@ -293,6 +304,45 @@ impl InputMethodEngine {
         candidates
     }
 
+    /// Readings the typing might have meant, had one `n` not been
+    /// dropped — `konnichiha` (こんいちは) also asks about `konnnichiha`
+    /// (こんにちは).
+    ///
+    /// Doubling an `n` is the whole repair. `ん` is the one kana that can
+    /// cost a keystroke more than it looks like it should, so the
+    /// keystroke people lose is an `n`, and putting one back covers every
+    /// shape the loss takes — before a vowel (`kanni` → かんい), before
+    /// な行 (`konnni` → こんに), before や行 (`shinnya` → しんや). Working
+    /// on the keystrokes instead of the kana is what makes it one rule
+    /// rather than a table of kana pairs; the buffer already keeps them
+    /// for Ctrl+L.
+    ///
+    /// A repair that converts to what was typed anyway is dropped, so a
+    /// word with nothing wrong with it costs nothing.
+    fn n_corrected_readings(&self, reading: &str) -> Vec<String> {
+        let raw = self.input_buf.raw();
+        if !raw.contains('n') || self.mode.current() == InputMode::Emoji {
+            return Vec::new();
+        }
+        let mut seen = HashSet::new();
+        let mut out: Vec<String> = Vec::new();
+        for (at, _) in raw.char_indices().filter(|(_, c)| *c == 'n') {
+            let variant = format!("{}n{}", &raw[..at], &raw[at..]);
+            if !seen.insert(variant.clone()) {
+                continue;
+            }
+            let corrected = self.converters.romaji.convert_flush(&variant);
+            if corrected == reading || out.contains(&corrected) {
+                continue;
+            }
+            out.push(corrected);
+            if out.len() >= MAX_CORRECTION_VARIANTS {
+                break;
+            }
+        }
+        out
+    }
+
     /// Classify the unresolved romaji tail for predictive lookup.
     fn tail_constraint(&self, pending: &str) -> TailConstraint {
         if pending.is_empty() {
@@ -375,6 +425,31 @@ impl InputMethodEngine {
         } else {
             for text in candidates {
                 builder.push(AnnotatedCandidate::new(text, CandidateSource::Model));
+            }
+        }
+
+        // 3b. Typing corrections: the same conversion, run on the reading
+        //     a dropped `n` would have cost. They sit below the model's
+        //     answer to what was actually typed, so a guess can never be
+        //     what Space selects first. No `with_reading` override: a
+        //     committed correction learns under the reading that was
+        //     *typed*, which is what makes the same slip land right the
+        //     next time — the corrected reading is one the user already
+        //     types correctly when they type it at all.
+        for corrected in self.n_corrected_readings(reading) {
+            let converted = self.model_candidates(&corrected, 1);
+            // No model (still loading, or nothing came back): the repaired
+            // kana is still worth offering — it is what they meant to type.
+            let texts = if converted.is_empty() {
+                vec![corrected]
+            } else {
+                converted
+            };
+            for text in texts {
+                builder.push(
+                    AnnotatedCandidate::new(text, CandidateSource::Model)
+                        .with_description(Some(CORRECTION_LABEL.to_string())),
+                );
             }
         }
 

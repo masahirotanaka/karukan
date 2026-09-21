@@ -234,15 +234,27 @@ fn test_real_words() {
         ("annninndouhu", "あんにんどうふ"),
     ]);
 
-    // "karukan" (single n at end): trailing 'n' stays pending (ambiguous),
-    // and flushing outputs it as-is
+    // "karukan" (single n at end): the trailing 'n' stays pending while
+    // it could still start a rule, and settles as ん at the flush
     assert_eq!(text("karukan"), "かるか");
     assert_eq!(pending("karukan"), "n");
-    assert_eq!(flushed("karukan"), "かるかn");
+    assert_eq!(flushed("karukan"), "かるかん");
 
     // "karukann" (nn at end) -> "かるかん" immediately (nn converts right away)
     assert_eq!(text("karukann"), "かるかん");
     assert_eq!(pending("karukann"), "");
+
+    // A stranded `n` settles as ん wherever the flush finds it, but only
+    // when no rule could still complete it.
+    assert_eq!(flushed("nihon"), "にほん");
+    assert_eq!(flushed("kan"), "かん");
+    assert_eq!(flushed("n"), "ん");
+    assert_eq!(flushed("nn"), "ん");
+    // `ny` never reached にゃ, so the `n` settles and the `y` passes
+    // through — the bare `n` must not pre-empt a rule that is still live.
+    assert_eq!(flushed("ny"), "んy");
+    assert_eq!(flushed("nya"), "にゃ");
+    assert_eq!(flushed("na"), "な");
 
     // Multiple input styles for the same output
     assert_eq!(text("narezzi"), "なれっじ");

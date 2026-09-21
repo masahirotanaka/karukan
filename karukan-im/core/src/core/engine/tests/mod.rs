@@ -20,6 +20,7 @@ mod katakana;
 mod learning;
 mod live_conversion;
 mod mode_toggle;
+mod n_correction;
 mod passthrough;
 mod pending_romaji;
 mod predictive;

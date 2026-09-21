@@ -45,6 +45,7 @@ IME本体(コアエンジン + 各プラットフォームのフロントエン�
 ## ドキュメント
 
 - [キーバインド一覧](docs/key-bindings.md) — 共通キーバインドと Linux / macOS 固有キー
+- [「ん」の打ち忘れ補正](docs/nn-correction.md) — 末尾の n は ん に、語中は「もしかして」候補に
 - [設定](docs/configuration.md) — config.toml の設定項目、ライブ変換、変換ストラテジー、学習キャッシュ
 - [辞書](docs/dictionary.md) — システム辞書のインストール、ユーザー辞書、候補の優先順位
 - [ユーザー辞書](docs/user-dictionary.md) — 対応形式（Mozc/Google IME TSV・バイナリ）と登録方法
