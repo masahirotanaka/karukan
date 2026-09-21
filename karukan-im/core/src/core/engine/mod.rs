@@ -128,6 +128,9 @@ pub struct InputMethodEngine {
     input_buf: InputBuffer,
     /// Live conversion state
     live: LiveConversion,
+    /// Ctrl+L's walk through the Latin forms of the composition, while one
+    /// is running — see [`AlphabetCycle`]. `None` until the first press.
+    alphabet_cycle: Option<AlphabetCycle>,
     /// Internal chunking of the composing buffer built by
     /// `chunked_auto_suggest`: the current per-chunk conversions, rebuilt from
     /// scratch on every keystroke (per-chunk model calls are deduplicated by
@@ -178,6 +181,7 @@ impl InputMethodEngine {
             mode: ModeState::default(),
             input_buf: InputBuffer::new(),
             live: LiveConversion::default(),
+            alphabet_cycle: None,
             chunks: Vec::new(),
             chunk_breaks: Vec::new(),
             conversion_cache: ConversionCache::default(),
@@ -271,6 +275,7 @@ impl InputMethodEngine {
     pub(super) fn clear_composition(&mut self) {
         self.input_buf.clear();
         self.live.shown = false;
+        self.alphabet_cycle = None;
         self.chunks.clear();
         self.chunk_breaks.clear();
         self.shown_suggestions = CandidateList::default();

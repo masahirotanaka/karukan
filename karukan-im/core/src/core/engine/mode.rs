@@ -1,8 +1,38 @@
 //! Mode switching (katakana, alphabet, live conversion)
 
+use karukan_engine::width::{to_full_width, to_half_width};
 use tracing::debug;
 
 use super::*;
+
+/// The Latin forms Ctrl+L walks, in order: what was typed, then the case
+/// and width variants — mozc's F10 half-width set followed by its F9
+/// full-width one. A form that repeats an earlier one (`123` upper-cased
+/// is still `123`) drops out, so every press lands somewhere new and a
+/// walk over digits is one stop long.
+fn alphabet_forms(origin: &str) -> Vec<(String, &'static str)> {
+    let half = to_half_width(origin);
+    let upper = half.to_ascii_uppercase();
+    let mut chars = half.chars();
+    let capitalized = match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    };
+
+    let mut forms: Vec<(String, &'static str)> = Vec::new();
+    for (text, label) in [
+        (half.clone(), "[半]英字"),
+        (upper.clone(), "[半]英大文字"),
+        (capitalized, "[半]先頭大文字"),
+        (to_full_width(&half), "[全]英字"),
+        (to_full_width(&upper), "[全]英大文字"),
+    ] {
+        if !forms.iter().any(|(seen, _)| *seen == text) {
+            forms.push((text, label));
+        }
+    }
+    forms
+}
 
 impl InputMethodEngine {
     /// Enter katakana mode (Ctrl+k)
@@ -62,6 +92,69 @@ impl InputMethodEngine {
         }
 
         EngineResult::consumed().with_action(aux)
+    }
+
+    /// Ctrl+L: put back what was typed, as Latin text.
+    ///
+    /// The composition is replaced by its own keystrokes (`ぷろぐらむ` →
+    /// `puroguramu`) and input switches to the temporary Alphabet mode, so
+    /// the rest of the word stays Latin and the next one comes back to
+    /// kana — the same deal Shift+letter makes. Pressing again walks the
+    /// case and width forms in [`alphabet_forms`]; pressing after anything
+    /// else starts over from the current typing.
+    ///
+    /// Works from Conversion too: the composition is untouched while
+    /// candidates are up, so the keystrokes are still there to hand back.
+    pub(super) fn convert_to_alphabet(&mut self) -> EngineResult {
+        if self.input_buf.is_empty() {
+            return EngineResult::not_consumed();
+        }
+
+        // A press that follows its own output continues the walk.
+        let continuing = self
+            .alphabet_cycle
+            .as_ref()
+            .filter(|cycle| cycle.produced == self.input_buf.display());
+        let (origin, step) = match continuing {
+            Some(cycle) => (cycle.origin.clone(), cycle.index + 1),
+            None => (self.input_buf.raw(), 0),
+        };
+
+        let forms = alphabet_forms(&origin);
+        if forms.is_empty() {
+            // Nothing was typed that has a Latin form (an empty origin).
+            return EngineResult::consumed();
+        }
+        // A press must always change something. Starting a walk on text
+        // that is already its own first form (Latin typed in alphabet
+        // mode) would look dead, so that press takes the next one.
+        let step = if step == 0 && forms[0].0 == self.input_buf.display() {
+            1
+        } else {
+            step
+        };
+        let (text, label) = forms[step % forms.len()].clone();
+        debug!("Ctrl+L: {} → {} ({})", origin, text, label);
+
+        // The live display and the chunks were built from a reading that
+        // no longer exists, so the whole composition-scoped set goes.
+        self.clear_composition();
+        for ch in text.chars() {
+            self.input_buf.push_direct(ch);
+        }
+        self.mode.enter_temporary(InputMode::Alphabet);
+        self.alphabet_cycle = Some(AlphabetCycle {
+            origin,
+            produced: text,
+            index: step % forms.len(),
+        });
+
+        let preedit = self.set_composing_state();
+        let aux = format!("{} 英数変換: {}", self.mode_indicator(), label);
+        EngineResult::consumed()
+            .with_action(EngineAction::UpdatePreedit(preedit))
+            .with_action(EngineAction::HideCandidates)
+            .with_action(EngineAction::UpdateAuxText(aux))
     }
 
     /// Ctrl+Shift+V: turn the aux line's debug details on or off. The next

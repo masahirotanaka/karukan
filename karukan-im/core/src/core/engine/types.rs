@@ -262,6 +262,24 @@ impl ModeState {
     }
 }
 
+/// Ctrl+L's walk through the Latin forms of one composition.
+///
+/// `origin` is the typing the first press converted, kept so every later
+/// press re-cuts from the same keystrokes instead of from what is on
+/// screen — upper-casing `HELLO` could never find its way back to
+/// `Hello`. `produced` is what that press left in the buffer: a press
+/// whose buffer no longer matches it starts a fresh walk, which is how an
+/// edit in between ends the old one without an invalidation hook.
+#[derive(Debug, Clone)]
+pub(in crate::core) struct AlphabetCycle {
+    /// The keystrokes every form is cut from.
+    pub origin: String,
+    /// The form the last press put in the buffer.
+    pub produced: String,
+    /// Its index in the form list.
+    pub index: usize,
+}
+
 /// One internal chunk of the composing buffer with its cached model
 /// conversion. Chunks are invisible — the user sees the concatenation of
 /// every `converted` as one continuous preedit; splitting only bounds each

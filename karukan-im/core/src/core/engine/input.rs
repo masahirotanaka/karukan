@@ -226,6 +226,10 @@ impl InputMethodEngine {
                 Keysym::KEY_J | Keysym::KEY_J_UPPER => return self.insert_chunk_break(),
                 // Ctrl+K: enter katakana mode
                 Keysym::KEY_K | Keysym::KEY_K_UPPER => return self.enter_katakana_mode(),
+                // Ctrl+L: hand back what was typed, as Latin text
+                // (Ctrl+Shift+L is the live-conversion toggle, taken
+                // before dispatch, so only the bare chord arrives here)
+                Keysym::KEY_L | Keysym::KEY_L_UPPER => return self.convert_to_alphabet(),
                 // Ctrl+A: move to beginning (Emacs-style Home)
                 Keysym::KEY_A | Keysym::KEY_A_UPPER => return self.move_caret_home(),
                 // Ctrl+B: move left (Emacs-style Left)

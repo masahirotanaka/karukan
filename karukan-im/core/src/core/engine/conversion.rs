@@ -598,6 +598,12 @@ impl InputMethodEngine {
                         Keysym::KEY_J | Keysym::KEY_J_UPPER => {
                             return self.rebreak_conversion();
                         }
+                        // Ctrl+L: drop the conversion and hand back the
+                        // typing as Latin text — the composition behind
+                        // the candidates still holds the keystrokes.
+                        Keysym::KEY_L | Keysym::KEY_L_UPPER => {
+                            return self.convert_to_alphabet();
+                        }
                         // Ctrl+A/B/E/F: the same caret moves as while
                         // composing, dropping back to editing like the
                         // arrow keys above.

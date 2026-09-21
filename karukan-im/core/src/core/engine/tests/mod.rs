@@ -6,6 +6,7 @@ use super::*;
 use crate::core::keycode::KeyModifiers;
 
 mod alphabet;
+mod alphabet_conversion;
 mod basic;
 mod candidate_window;
 mod candidates;
@@ -120,6 +121,15 @@ fn press_ctrl_shift(keysym: Keysym) -> KeyEvent {
         KeyModifiers::new().with_control(true).with_shift(true),
         true,
     )
+}
+
+/// Type `keys` one keystroke at a time, returning the last result.
+fn type_keys(engine: &mut InputMethodEngine, keys: &str) -> EngineResult {
+    let mut result = EngineResult::not_consumed();
+    for ch in keys.chars() {
+        result = engine.process_key(&press(ch));
+    }
+    result
 }
 
 /// Last UpdateAuxText emitted by an engine result, if any.
