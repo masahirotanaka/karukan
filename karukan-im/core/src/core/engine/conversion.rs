@@ -182,6 +182,29 @@ impl InputMethodEngine {
             .with_action(EngineAction::UpdateAuxText(aux))
     }
 
+    /// What an exact dictionary match is looked up under, or `None` when
+    /// there is nothing to match exactly.
+    ///
+    /// Normally the settled reading, and only while no romaji tail is
+    /// pending: an exact hit on the base would ignore the tail the user is
+    /// still typing, offering わせ's entries for 「わせd」.
+    ///
+    /// A composition that is *all* unresolved keystrokes (`m`, `gm` — a
+    /// consonant run that never reached a rule) has no base to ignore, so
+    /// the keystrokes are the key. That is what makes a latin shortcut
+    /// reachable: a user dictionary entry read `m` answers the `m`
+    /// keystroke, the way mozc looks its raw input up alongside the kana.
+    /// Only exact, never predictive — a one-letter prefix over a latin
+    /// dictionary would flood the window, and a shortcut is something the
+    /// user typed in full.
+    fn exact_match_key<'a>(reading: &'a str, pending: &'a str) -> Option<&'a str> {
+        match (reading.is_empty(), pending.is_empty()) {
+            (_, true) => Some(reading),
+            (true, false) => Some(pending),
+            (false, false) => None,
+        }
+    }
+
     /// Dictionary candidates for a reading: user dict first, then system,
     /// exact matches then predictive (prefix-extending) ones, deduped.
     ///
@@ -189,6 +212,9 @@ impl InputMethodEngine {
     /// can still become (わせ + `d` keeps わせだ…, drops わせり…);
     /// `predictive_limit` caps those results. `only` restricts search and
     /// dedup to one dictionary, so shared surfaces stay visible per view.
+    ///
+    /// A composition that is *nothing but* an unresolved tail is looked up
+    /// under the keystrokes themselves — see [`Self::exact_match_key`].
     pub(super) fn search_dictionaries(
         &self,
         reading: &str,
@@ -208,14 +234,14 @@ impl InputMethodEngine {
         let mut candidates = Vec::new();
         let mut seen = HashSet::new();
 
-        // Exact matches, user dictionary first — only when no romaji tail
-        // is pending (an exact hit on the base would ignore the typed
-        // tail). Candidates are sorted by score at build/load time
+        // Exact matches, user dictionary first. Candidates are sorted by
+        // score at build/load time
+        let exact_key = Self::exact_match_key(reading, pending);
         for &(dict, source) in &dicts {
-            if !pending.is_empty() {
+            let Some(key) = exact_key else {
                 break;
-            }
-            let Some(result) = dict.and_then(|d| d.exact_match_search(reading)) else {
+            };
+            let Some(result) = dict.and_then(|d| d.exact_match_search(key)) else {
                 continue;
             };
             for cand in result.candidates {
