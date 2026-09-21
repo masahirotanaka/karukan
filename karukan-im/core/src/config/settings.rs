@@ -196,6 +196,11 @@ pub struct ConversionSettings {
     pub n_threads: u32,
     /// Enable live conversion at startup (Ctrl+Shift+L still toggles at runtime)
     pub live_conversion: bool,
+    /// Let a repaired reading replace what was typed when the model is far
+    /// surer of it — the dropped second `n` of ん. Off, the repair still
+    /// rides as a 「もしかして」 candidate; on, it costs two extra scoring
+    /// passes on the Space that opens a conversion.
+    pub auto_correct_n: bool,
 }
 
 /// Learning cache settings

@@ -16,6 +16,46 @@ const MAX_LEARNING_CANDIDATES: usize = 3;
 /// than the one typed.
 const CORRECTION_LABEL: &str = "もしかして";
 
+/// How much surer of the repaired reading the model must be before the
+/// repair replaces what was typed instead of sitting under it, as a ratio
+/// of per-character NLL.
+///
+/// Measured on jinen-v2-small over 19 readings: ones that really had lost
+/// an `n` score 3.5–3800× worse than their repair, while correct typing
+/// whose repair is nonsense stays at or under 1.5×. Three sits in that
+/// gap. Erring low silently rewrites what someone typed; erring high only
+/// leaves the repair where it already was, a candidate away — so when in
+/// doubt this number goes up.
+const AUTO_CORRECTION_RATIO: f32 = 3.0;
+
+/// How much surer of *what was typed* the model must be before a repair
+/// is dropped rather than offered. The mirror of
+/// [`AUTO_CORRECTION_RATIO`]: correct typing throws off repairs that
+/// score 20× worse than the real reading (にほんごのべんきょう against
+/// にほんごんおべんきょう), and there is no reason to show those.
+const REPAIR_NOISE_RATIO: f32 = 3.0;
+
+/// What the model made of a repaired reading, weighed against what was
+/// actually typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    /// Far surer of the repair: it is what the typing meant.
+    Replace,
+    /// Too close to call, or not weighed at all — let the user choose.
+    Offer,
+    /// Far surer of what was typed: the repair is noise.
+    Drop,
+}
+
+/// Shortest reading a repair may replace outright.
+///
+/// Two or three kana carry too little for the score to mean anything
+/// about the typing: かに scores 7.5× worse than かんい simply because 蟹
+/// is a rarer word than 簡易, and 「かに」 must not turn into 「簡易」.
+/// Below this the repair still rides as a candidate, and a word this
+/// short is cheap to retype anyway.
+const MIN_AUTO_CORRECTION_CHARS: usize = 5;
+
 /// How many repaired readings one conversion may try. Each is a model
 /// call, so the cap is what keeps a dropped keystroke from costing a
 /// conversion per `n` in the word. Two covers a word with a mistake in
@@ -332,7 +372,12 @@ impl InputMethodEngine {
                 continue;
             }
             let corrected = self.converters.romaji.convert_flush(&variant);
-            if corrected == reading || out.contains(&corrected) {
+            // No Japanese word opens with ん, so a repair that produces one
+            // put the keystroke somewhere nobody typed it (`nekoga…` →
+            // んえこが…). Dropping them here is what keeps the score
+            // honest: 「んエコが好きです」 is the one reading the model
+            // liked better than 「猫が好きです」.
+            if corrected.starts_with('ん') || corrected == reading || out.contains(&corrected) {
                 continue;
             }
             out.push(corrected);
@@ -341,6 +386,75 @@ impl InputMethodEngine {
             }
         }
         out
+    }
+
+    /// Repairs for a dropped `n`, converted and weighed against what was
+    /// actually typed.
+    ///
+    /// Only the first is weighed. Each weighing costs two scoring passes,
+    /// and a reading whose *second* repair is the right one is not the
+    /// single slipped keystroke this is for — the rest are offered as
+    /// they are.
+    ///
+    /// Both sides are weighed the same way: the per-character NLL of the
+    /// model's own answer to that reading. So this compares two
+    /// conversions the model produced, never a conversion against a
+    /// guess. The gate is a ratio, not a difference — per-character NLL
+    /// spans orders of magnitude between a confident reading and one the
+    /// model was forced through, and the two populations separate on that
+    /// scale (see [`AUTO_CORRECTION_RATIO`]).
+    fn weighed_repairs(&mut self, reading: &str, typed: &[String]) -> Vec<(String, Verdict)> {
+        let mut out = Vec::new();
+        for (nth, corrected) in self.n_corrected_readings(reading).into_iter().enumerate() {
+            let converted = self.model_candidates(&corrected, 1).into_iter().next();
+            // No model, or nothing came back: the repaired kana is still
+            // worth offering — it is what they meant to type.
+            let text = converted.unwrap_or_else(|| corrected.clone());
+            let verdict = if nth == 0 {
+                self.weigh(reading, typed.first(), &corrected, &text)
+            } else {
+                Verdict::Offer
+            };
+            if verdict != Verdict::Drop {
+                out.push((text, verdict));
+            }
+        }
+        out
+    }
+
+    /// Weigh one repair against the typing. `Offer` whenever there is no
+    /// verdict to be had — the feature off, a reading too short to judge,
+    /// no model, a scoring failure — so an unknown never rewrites text.
+    fn weigh(
+        &self,
+        reading: &str,
+        typed_text: Option<&String>,
+        corrected: &str,
+        corrected_text: &str,
+    ) -> Verdict {
+        if !self.config.auto_correct_n || reading.chars().count() < MIN_AUTO_CORRECTION_CHARS {
+            return Verdict::Offer;
+        }
+        let (Some(typed_text), Some(converter)) = (typed_text, self.converters.kanji.as_ref())
+        else {
+            return Verdict::Offer;
+        };
+        let (Ok(typed_nll), Ok(corrected_nll)) = (
+            converter.score(reading, typed_text),
+            converter.score(corrected, corrected_text),
+        ) else {
+            return Verdict::Offer;
+        };
+        debug!(
+            "repair: {reading}→{typed_text} ({typed_nll:.4}) vs {corrected}→{corrected_text} ({corrected_nll:.4})"
+        );
+        if typed_nll > corrected_nll * AUTO_CORRECTION_RATIO {
+            Verdict::Replace
+        } else if corrected_nll > typed_nll * REPAIR_NOISE_RATIO {
+            Verdict::Drop
+        } else {
+            Verdict::Offer
+        }
     }
 
     /// Classify the unresolved romaji tail for predictive lookup.
@@ -412,7 +526,9 @@ impl InputMethodEngine {
             builder.push(ac);
         }
 
-        // 3. Model inference results
+        // 3. Model inference results, headed by a repair the model is
+        //    far surer of than the reading it was handed.
+        let repairs = self.weighed_repairs(reading, &candidates);
         if candidates.is_empty() {
             // No literal fallback in emoji mode: `:smile` must not outrank
             // the 😄 surfaced by the rewriter step below.
@@ -423,34 +539,33 @@ impl InputMethodEngine {
                 ));
             }
         } else {
+            // A replacement heads the model's own answer: it is what the
+            // typing meant, so it is what Space should land on. Learning
+            // and the user's dictionary still outrank it — those are
+            // things the user said outright.
+            for (text, _) in repairs.iter().filter(|(_, v)| *v == Verdict::Replace) {
+                builder.push(
+                    AnnotatedCandidate::new(text.clone(), CandidateSource::Model)
+                        .with_description(Some(CORRECTION_LABEL.to_string())),
+                );
+            }
             for text in candidates {
                 builder.push(AnnotatedCandidate::new(text, CandidateSource::Model));
             }
         }
 
-        // 3b. Typing corrections: the same conversion, run on the reading
-        //     a dropped `n` would have cost. They sit below the model's
-        //     answer to what was actually typed, so a guess can never be
-        //     what Space selects first. No `with_reading` override: a
-        //     committed correction learns under the reading that was
-        //     *typed*, which is what makes the same slip land right the
-        //     next time — the corrected reading is one the user already
-        //     types correctly when they type it at all.
-        for corrected in self.n_corrected_readings(reading) {
-            let converted = self.model_candidates(&corrected, 1);
-            // No model (still loading, or nothing came back): the repaired
-            // kana is still worth offering — it is what they meant to type.
-            let texts = if converted.is_empty() {
-                vec![corrected]
-            } else {
-                converted
-            };
-            for text in texts {
-                builder.push(
-                    AnnotatedCandidate::new(text, CandidateSource::Model)
-                        .with_description(Some(CORRECTION_LABEL.to_string())),
-                );
-            }
+        // 3b. The repairs that were not sure enough to replace anything
+        //     ride below the model's answer, so a guess can never be what
+        //     Space selects first. No `with_reading` override: a committed
+        //     correction learns under the reading that was *typed*, which
+        //     is what makes the same slip land right the next time — the
+        //     repaired reading is one the user already types correctly
+        //     when they type it at all.
+        for (text, _) in repairs.iter().filter(|(_, v)| *v == Verdict::Offer) {
+            builder.push(
+                AnnotatedCandidate::new(text.clone(), CandidateSource::Model)
+                    .with_description(Some(CORRECTION_LABEL.to_string())),
+            );
         }
 
         // 4. System dictionary candidates

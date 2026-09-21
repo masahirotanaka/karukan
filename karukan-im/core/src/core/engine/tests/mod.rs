@@ -21,6 +21,7 @@ mod learning;
 mod live_conversion;
 mod mode_toggle;
 mod n_correction;
+mod n_correction_model;
 mod passthrough;
 mod pending_romaji;
 mod predictive;

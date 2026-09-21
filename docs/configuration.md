@@ -5,6 +5,7 @@
 ```toml
 [conversion]
 live_conversion = true          # ライブ変換を起動時に有効化（Ctrl+Shift+L で実行中も切替。既定ON）
+auto_correct_n = true           # 「ん」の n の打ち忘れをモデルの確信度で自動補正（[詳細](nn-correction.md)）
 chunk_chars = 30                # 一度にAI変換する Chunk の最大文字数（[Chunk](chunking.md) 参照）
 chunk_symbols = 1               # Chunk に残せる記号（、。！？など）の数
 chunk_digits = 0                # Chunk に残せる数字の桁数（0 = 数字はAI変換にかけない）
@@ -84,6 +85,14 @@ my-model = "/home/user/models/my-model.gguf"
 入力と同時にかな漢字変換の結果をプリエディットへリアルタイム表示します（Spaceを押さずに変換が進む）。`Ctrl+Shift+L` でON/OFFを切り替えられ、既定では `live_conversion = true` で有効です。
 
 入力中の文が長くなっても変換時間が伸びないよう、変換は一定の長さごとの Chunk に区切って実行されます。Chunk の決まり方、表示のちらつきを止める手動区切り、`chunk_*` の調整方法は [Chunk](chunking.md) を参照してください。
+
+## 「ん」の打ち忘れ補正
+
+`nn` と打つべきところを `n` 1回で済ませてしまった読みを、モデルの確信度で自動的に直します
+（`sinyabasuninoritai` → 深夜バスに乗りたい）。差し替えるのは、直した読みのほうが
+打った通りの読みより十分に尤もらしいと判定できたときだけです。`auto_correct_n = false` に
+すると差し替えをやめ、「もしかして」候補として並べるだけになります。判定の仕組み・安全装置・
+既知の限界は [「ん」の打ち忘れ補正](nn-correction.md) を参照してください。
 
 ## 記号・半角全角
 

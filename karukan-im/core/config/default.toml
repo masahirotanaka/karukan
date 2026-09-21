@@ -45,6 +45,11 @@ light_model = "jinen-v2-xsmall-q5"
 n_threads = 4
 # 起動時にライブ変換を有効にする（Ctrl+Shift+L で実行中も切替可能）
 live_conversion = true
+# 「ん」の n を1回打ち忘れた読みを、モデルの確信度で自動的に直す。
+# 打った通りの変換より「n を1つ足した読み」の変換のほうがモデルにとって
+# 十分に尤もらしいときだけ差し替える（docs/nn-correction.md）。
+# false にすると差し替えず、「もしかして」候補として並べるだけになる。
+auto_correct_n = true
 # ユーザー辞書: ~/.local/share/karukan-im/user_dicts/ に辞書ファイルを配置（Mozc TSV or KRKN binary）
 
 # 変換モデル。model / light_model はここのキーを参照する。値は 2 通り:

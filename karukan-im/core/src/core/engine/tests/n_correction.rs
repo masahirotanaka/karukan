@@ -135,3 +135,43 @@ fn committing_a_correction_learns_under_what_was_typed() {
         "learned: {learned:?}"
     );
 }
+
+#[test]
+fn a_repair_that_opens_with_n_is_never_offered() {
+    // `nekogasukidesu` doubles its leading `n` into んえこがすきです —
+    // no Japanese word opens with ん, and this is the one repair the
+    // model scored *better* than 猫が好きです.
+    let engine = convert("nekogasukidesu");
+    assert!(
+        !corrections(&engine).iter().any(|t| t.starts_with('ん')),
+        "{:?}",
+        corrections(&engine)
+    );
+}
+
+#[test]
+fn nothing_is_replaced_without_a_model() {
+    // The head of the list is the model's answer to what was typed, and
+    // with no model that is the reading itself. A repair can only ever
+    // displace it on a score, never on its own.
+    let engine = convert("kani");
+    assert_eq!(all(&engine).first().map(String::as_str), Some("かに"));
+}
+
+#[test]
+fn the_toggle_turns_replacement_off_but_keeps_the_candidate() {
+    let mut engine = InputMethodEngine::with_config(EngineConfig {
+        auto_correct_n: false,
+        ..EngineConfig::default()
+    });
+    engine.converters.kanji = None;
+    type_keys(&mut engine, "konnichiha");
+    engine.process_key(&press_key(Keysym::SPACE));
+
+    assert_eq!(all(&engine).first().map(String::as_str), Some("こんいちは"));
+    assert!(
+        corrections(&engine).contains(&"こんにちは".to_string()),
+        "{:?}",
+        corrections(&engine)
+    );
+}

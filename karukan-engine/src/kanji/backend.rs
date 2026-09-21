@@ -2,7 +2,7 @@
 
 use super::error::KanjiError;
 use super::hf_download::download_gguf;
-use super::llamacpp::LlamaCppModel;
+use super::llamacpp::{LlamaCppModel, NllScorer};
 use super::{CONTEXT_TOKEN, INPUT_START_TOKEN, OUTPUT_START_TOKEN};
 use crate::kana::{hiragana_to_katakana, normalize_nfkc};
 use std::path::PathBuf;
@@ -65,6 +65,10 @@ pub fn clean_model_output(text: &str) -> String {
 }
 
 /// Kanji converter using llama.cpp backend
+/// Context size for [`KanaKanjiConverter::score`]: a reading, its
+/// conversion and the jinen prompt around them, with room to spare.
+const SCORE_N_CTX: u32 = 512;
+
 pub struct KanaKanjiConverter {
     model: LlamaCppModel,
     display_name: String,
@@ -149,6 +153,19 @@ impl KanaKanjiConverter {
     }
 
     /// Get a human-readable model name for display
+    /// Per-character NLL of `surface` read as `reading`: how sure the
+    /// model is that this is what the reading says, lower being surer.
+    ///
+    /// Normalized per character, so two readings of different lengths
+    /// compare — which is what lets a caller ask which of two readings
+    /// the typing meant. The scorer's context is built per call; at
+    /// `SCORE_N_CTX` tokens that costs a few milliseconds beside the
+    /// generation it is weighing, and it keeps the borrow local.
+    pub fn score(&self, reading: &str, surface: &str) -> Result<f32> {
+        let mut scorer = NllScorer::new(&self.model, SCORE_N_CTX)?;
+        scorer.compute_nll(&hiragana_to_katakana(reading), surface)
+    }
+
     pub fn model_display_name(&self) -> &str {
         &self.display_name
     }
