@@ -131,6 +131,9 @@ pub struct InputMethodEngine {
     /// Ctrl+L's walk through the Latin forms of the composition, while one
     /// is running — see [`AlphabetCycle`]. `None` until the first press.
     alphabet_cycle: Option<AlphabetCycle>,
+    /// A Ctrl is down and nothing has been pressed with it yet, so its
+    /// release would be a lone tap — see [`Self::track_ctrl_tap`].
+    ctrl_tap_armed: bool,
     /// Internal chunking of the composing buffer built by
     /// `chunked_auto_suggest`: the current per-chunk conversions, rebuilt from
     /// scratch on every keystroke (per-chunk model calls are deduplicated by
@@ -182,6 +185,7 @@ impl InputMethodEngine {
             input_buf: InputBuffer::new(),
             live: LiveConversion::default(),
             alphabet_cycle: None,
+            ctrl_tap_armed: false,
             chunks: Vec::new(),
             chunk_breaks: Vec::new(),
             conversion_cache: ConversionCache::default(),
@@ -264,6 +268,8 @@ impl InputMethodEngine {
     pub fn reset(&mut self) {
         self.state = InputState::Empty;
         self.mode = ModeState::default();
+        // A Ctrl held across a focus change has no release to wait for.
+        self.ctrl_tap_armed = false;
         self.clear_composition();
         self.metrics = ConversionMetrics::default();
     }
@@ -432,6 +438,56 @@ impl InputMethodEngine {
         self.surrounding_context = Some(SurroundingContext { left, right });
     }
 
+    /// Come back to Hiragana from katakana/alphabet/emoji, re-rendering
+    /// whatever is on screen. `None` when nothing changes, so a caller can
+    /// pass the key through: already in kana, or a conversion is in flight.
+    ///
+    /// While a conversion is in flight (candidate window open) the kana
+    /// modes cannot toggle: switching would katakana-bake the conversion
+    /// *reading* (not the preedit) and defeat the Emoji-mode learning
+    /// guard — the commit path checks the current mode to decide whether
+    /// the reading is safe to record in the kana-keyed learning cache.
+    /// Alphabet is exempt: it only says how the next keystroke is read,
+    /// and Shift+letter can enter it there (typing refines the reading
+    /// instead of committing), so this is the only way back out.
+    fn return_to_hiragana(&mut self) -> Option<Vec<EngineAction>> {
+        if matches!(self.state, InputState::Conversion { .. })
+            && self.mode.current() != InputMode::Alphabet
+        {
+            return None;
+        }
+        if self.mode.current() == InputMode::Hiragana {
+            return None;
+        }
+        // Bake katakana before switching so preedit doesn't revert. No
+        // settling otherwise — the mode switch must not touch the
+        // elements, so live romaji (`ky` typed before an alphabet word)
+        // still combines after coming back to kana mode.
+        if self.mode.current() == InputMode::Katakana {
+            self.settle_romaji();
+            self.bake_katakana();
+        }
+        self.mode.set(InputMode::Hiragana);
+        // An open candidate window keeps its own line, mode indicator
+        // included: a composing line here would hide the source-filter
+        // header mid-view.
+        let aux = match &self.state {
+            InputState::Conversion {
+                reading,
+                candidates,
+                ..
+            } => self.format_aux_conversion(reading, candidates),
+            _ => self.format_aux_composing(),
+        };
+        let mut actions = Vec::new();
+        if matches!(self.state, InputState::Composing { .. }) {
+            let preedit = self.set_composing_state();
+            actions.push(EngineAction::UpdatePreedit(preedit));
+        }
+        actions.push(EngineAction::UpdateAuxText(aux));
+        Some(actions)
+    }
+
     /// Handle mode toggle keys (Right Alt/Super/Meta/Hyper and the JIS 変換
     /// key): one-way non-Hiragana → Hiragana.
     /// Returns `Some(result)` if the key was handled, `None` if not a mode toggle key.
@@ -446,53 +502,41 @@ impl InputMethodEngine {
         if key.keysym == Keysym::HENKAN && key.modifiers.any() {
             return None;
         }
-        // While a conversion is in flight (candidate window open) the kana
-        // modes cannot toggle: switching would katakana-bake the conversion
-        // *reading* (not the preedit) and defeat the Emoji-mode learning
-        // guard — the commit path checks the current mode to decide whether
-        // the reading is safe to record in the kana-keyed learning cache.
-        // Alphabet is exempt: it only says how the next keystroke is read,
-        // and Shift+letter can enter it here (typing refines the reading
-        // instead of committing), so this is the only way back out.
-        if matches!(self.state, InputState::Conversion { .. })
-            && self.mode.current() != InputMode::Alphabet
-        {
-            return Some(EngineResult::not_consumed());
-        }
         // Only consume the key when actually switching; otherwise pass through
         // so the system can properly track modifier state.
-        if key.is_press && self.mode.current() != InputMode::Hiragana {
-            // Bake katakana before switching so preedit doesn't revert. No
-            // settling otherwise — the mode switch must not touch the
-            // elements, so live romaji (`ky` typed before an alphabet word)
-            // still combines after coming back to kana mode.
-            if self.mode.current() == InputMode::Katakana {
-                self.settle_romaji();
-                self.bake_katakana();
-            }
-            self.mode.set(InputMode::Hiragana);
-            // An open candidate window keeps its own line, mode indicator
-            // included: a composing line here would hide the source-filter
-            // header mid-view.
-            let aux = match &self.state {
-                InputState::Conversion {
-                    reading,
-                    candidates,
-                    ..
-                } => self.format_aux_conversion(reading, candidates),
-                _ => self.format_aux_composing(),
-            };
-            if matches!(self.state, InputState::Composing { .. }) {
-                let preedit = self.set_composing_state();
-                return Some(
-                    EngineResult::consumed()
-                        .with_action(EngineAction::UpdatePreedit(preedit))
-                        .with_action(EngineAction::UpdateAuxText(aux)),
-                );
-            }
-            return Some(EngineResult::consumed().with_action(EngineAction::UpdateAuxText(aux)));
+        if !key.is_press {
+            return Some(EngineResult::not_consumed());
         }
-        Some(EngineResult::not_consumed())
+        let Some(actions) = self.return_to_hiragana() else {
+            return Some(EngineResult::not_consumed());
+        };
+        Some(EngineResult {
+            consumed: true,
+            actions,
+        })
+    }
+
+    /// Watch for a lone Ctrl tap — pressed and released with nothing in
+    /// between — and report the release that completes one.
+    ///
+    /// Ctrl cannot switch modes on its press the way the right-hand
+    /// modifiers do: every Ctrl chord starts with that press, so Ctrl+L
+    /// would flip to kana before its own L arrived. The tap is the gesture
+    /// that cannot be mistaken for a chord, which is what the macOS
+    /// frontend already does with the right-⌘ key. Any other key event
+    /// disarms it, and so does a Ctrl pressed while another modifier is
+    /// down — Ctrl+Shift is a chord in the making, not a tap.
+    fn track_ctrl_tap(&mut self, key: &KeyEvent) -> bool {
+        if !matches!(key.keysym, Keysym::CONTROL_L | Keysym::CONTROL_R) {
+            self.ctrl_tap_armed = false;
+            return false;
+        }
+        if key.is_press {
+            self.ctrl_tap_armed =
+                !(key.modifiers.shift_key || key.modifiers.alt_key || key.modifiers.super_key);
+            return false;
+        }
+        std::mem::take(&mut self.ctrl_tap_armed)
     }
 
     /// Text the engine did not type, at the width its groups are
@@ -570,6 +614,10 @@ impl InputMethodEngine {
         // Install converters the background loader has finished; never blocks.
         self.poll_loaded_models();
 
+        // Before anything else sees the event: every key that is not this
+        // Ctrl disarms the tap, so the arming can never outlive a chord.
+        let ctrl_tapped = self.track_ctrl_tap(key);
+
         // Log modifier key events for debugging key mapping issues
         if key.keysym.is_modifier() {
             debug!(
@@ -585,6 +633,16 @@ impl InputMethodEngine {
 
         // Modifier-only keys (Shift, Ctrl, Alt_L, Super_L, etc.): pass through
         if key.keysym.is_modifier() {
+            // …but a lone Ctrl tap brings kana back first, the way the
+            // right-hand modifiers and 変換 do. The release is still passed
+            // through: consuming it would leave the application believing
+            // Ctrl is stuck down.
+            if ctrl_tapped && let Some(actions) = self.return_to_hiragana() {
+                return EngineResult {
+                    consumed: false,
+                    actions,
+                };
+            }
             return EngineResult::not_consumed();
         }
 

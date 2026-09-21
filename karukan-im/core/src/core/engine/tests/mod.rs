@@ -12,6 +12,7 @@ mod candidate_window;
 mod candidates;
 mod chunks;
 mod conversion;
+mod ctrl_tap;
 mod cursor;
 mod date;
 mod emoji;
