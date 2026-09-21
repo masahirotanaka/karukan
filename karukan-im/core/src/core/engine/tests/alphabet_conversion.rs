@@ -24,8 +24,42 @@ fn ctrl_l_gives_back_the_typing() {
     let result = ctrl_l(&mut engine);
     assert!(result.consumed);
     assert_eq!(preedit(&engine), "hello");
-    // Input carries on in Latin, as if Shift+letter had opened the word.
+    // Kana carries straight on — no mode key to get back to Japanese.
+    assert_eq!(engine.mode.current(), InputMode::Hiragana);
+}
+
+#[test]
+fn kana_carries_on_after_ctrl_l() {
+    let mut engine = InputMethodEngine::new();
+    type_keys(&mut engine, "hello");
+    ctrl_l(&mut engine);
+
+    type_keys(&mut engine, "ka");
+    assert_eq!(preedit(&engine), "helloか");
+}
+
+#[test]
+fn ctrl_l_ends_the_mode_shift_opened() {
+    // Shift+letter's Alphabet is temporary, and the conversion ends it.
+    let mut engine = InputMethodEngine::new();
+    engine.process_key(&press_shift('A'));
+    type_keys(&mut engine, "bc");
     assert_eq!(engine.mode.current(), InputMode::Alphabet);
+
+    ctrl_l(&mut engine);
+    assert_eq!(engine.mode.current(), InputMode::Hiragana);
+}
+
+#[test]
+fn ctrl_l_leaves_a_deliberate_katakana_mode_alone() {
+    // Katakana was picked outright (Ctrl+K), so it is not something the
+    // conversion gets to undo — only a temporary mode is.
+    let mut engine = InputMethodEngine::new();
+    type_keys(&mut engine, "ka");
+    engine.process_key(&press_ctrl(Keysym::KEY_K));
+
+    ctrl_l(&mut engine);
+    assert_eq!(engine.mode.current(), InputMode::Katakana);
 }
 
 #[test]
@@ -103,7 +137,8 @@ fn typing_after_ctrl_l_restarts_the_walk() {
     ctrl_l(&mut engine);
     assert_eq!(preedit(&engine), "HELLO");
 
-    // Alphabet mode, so this lands as a plain letter.
+    // Kana mode now, so this is a live keystroke — still shown as `x`,
+    // since `x` alone has fired no rule yet.
     type_keys(&mut engine, "x");
     assert_eq!(preedit(&engine), "HELLOx");
 
@@ -137,7 +172,6 @@ fn commit_after_ctrl_l_returns_to_kana() {
         _ => None,
     });
     assert_eq!(committed.as_deref(), Some("hello"));
-    // Alphabet was temporary, so the next word is kana again.
     assert_eq!(engine.mode.current(), InputMode::Hiragana);
 }
 

@@ -97,11 +97,18 @@ impl InputMethodEngine {
     /// Ctrl+L: put back what was typed, as Latin text.
     ///
     /// The composition is replaced by its own keystrokes (`ぷろぐらむ` →
-    /// `puroguramu`) and input switches to the temporary Alphabet mode, so
-    /// the rest of the word stays Latin and the next one comes back to
-    /// kana — the same deal Shift+letter makes. Pressing again walks the
-    /// case and width forms in [`alphabet_forms`]; pressing after anything
-    /// else starts over from the current typing.
+    /// `puroguramu`) and kana input carries straight on, so the Japanese
+    /// after the Latin word costs no mode key: the converted text is
+    /// settled, and the keystrokes that follow romanize as usual
+    /// (`hello` + `ka` → 「helloか」). Any temporary mode the press found
+    /// itself in ends here, which is what brings Shift+letter's Alphabet
+    /// back to kana; a deliberate Katakana mode is left alone.
+    ///
+    /// Pressing again walks the case and width forms in
+    /// [`alphabet_forms`] — the walk is keyed on the text, not the mode,
+    /// so it survives the switch. Pressing after anything else starts
+    /// over from the current typing. To keep typing *Latin* after the
+    /// conversion, Shift+letter opens direct input as it always does.
     ///
     /// Works from Conversion too: the composition is untouched while
     /// candidates are up, so the keystrokes are still there to hand back.
@@ -142,7 +149,10 @@ impl InputMethodEngine {
         for ch in text.chars() {
             self.input_buf.push_direct(ch);
         }
-        self.mode.enter_temporary(InputMode::Alphabet);
+        // Back to kana for whatever comes next. `exit_temporary` is the
+        // whole switch: it drops Shift+letter's Alphabet (and Emoji) and
+        // leaves a mode the user picked outright — Katakana — in place.
+        self.mode.exit_temporary();
         self.alphabet_cycle = Some(AlphabetCycle {
             origin,
             produced: text,
