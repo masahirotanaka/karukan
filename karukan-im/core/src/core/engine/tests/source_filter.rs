@@ -1136,6 +1136,24 @@ fn test_verbose_toggle_keeps_what_conversion_needs() {
 }
 
 #[test]
+fn test_verbose_toggle_is_passed_through_when_nothing_is_typed() {
+    // Ctrl+Shift+V is the terminal's paste. With an empty buffer there is no
+    // aux line to detail, so the chord goes to the application instead of
+    // being swallowed — the toggle still works the moment typing starts.
+    let mut engine = InputMethodEngine::new();
+    let idle = engine.process_key(&press_ctrl_shift(Keysym::KEY_V));
+    assert!(!idle.consumed, "paste must reach the application: {idle:?}");
+    assert!(idle.actions.is_empty(), "no render either: {:?}", idle.actions);
+    assert!(!engine.config.verbose, "verbose must not have flipped");
+
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    let typing = engine.process_key(&press_ctrl_shift(Keysym::KEY_V));
+    assert!(typing.consumed, "the toggle owns the chord while typing");
+    assert!(engine.config.verbose, "verbose is on now");
+}
+
+#[test]
 fn test_ctrl_i_jumps_straight_to_the_ai_view() {
     // One press reaches the AI view from either state, instead of walking
     // the cycle to it.

@@ -168,14 +168,16 @@ impl InputMethodEngine {
     }
 
     /// Ctrl+Shift+V: turn the aux line's debug details on or off. The next
-    /// render picks it up, so no state has to be rebuilt here.
+    /// render picks it up, so no state has to be rebuilt here. The key only
+    /// reaches this while something is being typed (the Empty state passes
+    /// the chord through to the application, whose paste it usually is).
     pub(super) fn toggle_verbose(&mut self) -> EngineResult {
         self.config.verbose = !self.config.verbose;
         let mode = if self.config.verbose { "ON" } else { "OFF" };
         debug!("Verbose display toggled: {}", mode);
         // Re-render the line the user is looking at, so the change shows now
-        // rather than on the next keystroke. Nothing is being typed in the
-        // Empty state, so there the toggle reports itself instead.
+        // rather than on the next keystroke. The Empty arm is unreachable from
+        // the key binding; it reports the toggle for any other caller.
         let aux = match &self.state {
             InputState::Conversion {
                 reading,
