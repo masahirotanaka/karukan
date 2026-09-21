@@ -45,10 +45,11 @@ impl InputMethodEngine {
             None
         };
 
-        let Some((candidates, reading)) = candidates else {
+        let Some((mut candidates, reading)) = candidates else {
             // No useful model suggestion — still show learning, dictionary,
             // and rewriter variants (e.g. `「` → `『`, `【`, …).
             self.live.shown = false;
+            self.live.correction = None;
             let preedit = self.set_composing_state();
             let reading = full_reading;
             let mut all_candidates = self.lookup_learning_candidates(&reading);
@@ -68,10 +69,22 @@ impl InputMethodEngine {
                 .with_action(EngineAction::UpdateAuxText(aux));
         };
 
+        // A repair the model is far surer of takes over the display: the
+        // whole point of live conversion is to show what Enter will
+        // commit, so a correction that only appeared on Space would be
+        // showing the wrong thing for as long as the word is being typed.
+        // Rebuilt every keystroke — `None` is as much a result as `Some`,
+        // and leaving a stale one would pin the display to a repair the
+        // next keystroke undid.
+        self.live.correction = self.live_replacement(&reading, &candidates[0]);
+        if let Some(repaired) = &self.live.correction {
+            candidates.insert(0, repaired.clone());
+        }
+
         // Live conversion mode: show converted text in preedit. The displayed
         // text is derived from the chunks (`live_text`), which
         // `chunked_auto_suggest` just rebuilt — candidates[0] is that same
-        // concatenation.
+        // concatenation, unless a repair stood in for it above.
         if self.live.enabled && self.mode.current() != InputMode::Katakana {
             self.live.shown = true;
             return self.suggest_result(candidates, &reading);

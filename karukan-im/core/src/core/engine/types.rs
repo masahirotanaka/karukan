@@ -310,6 +310,11 @@ pub(in crate::core) struct LiveConversion {
     /// Cleared by gestures that fall back to the kana display (cursor moves,
     /// first Escape, mode switches) without discarding the chunks.
     pub shown: bool,
+    /// A repaired conversion standing in for the chunks' own — the
+    /// dropped `n` of ん, when the model is far surer of the repair.
+    /// Rebuilt from scratch on every refresh, so it cannot go stale
+    /// against the chunks the way a cached display would.
+    pub correction: Option<String>,
 }
 
 impl LiveConversion {
@@ -317,6 +322,7 @@ impl LiveConversion {
         Self {
             enabled,
             shown: false,
+            correction: None,
         }
     }
 }

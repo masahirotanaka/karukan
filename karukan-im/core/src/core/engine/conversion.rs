@@ -364,6 +364,14 @@ impl InputMethodEngine {
         if !raw.contains('n') || self.mode.current() == InputMode::Emoji {
             return Vec::new();
         }
+        // The repairs have to be repairs of *this* reading. While a romaji
+        // tail is still live the keystrokes say more than the reading does
+        // — `sinyabasunin` reads しにゃばすに with an `n` still in hand —
+        // and a repair cut from them would be weighed against a conversion
+        // of something else.
+        if self.converters.romaji.convert_flush(&raw) != reading {
+            return Vec::new();
+        }
         let mut seen = HashSet::new();
         let mut out: Vec<String> = Vec::new();
         for (at, _) in raw.char_indices().filter(|(_, c)| *c == 'n') {
@@ -420,6 +428,26 @@ impl InputMethodEngine {
             }
         }
         out
+    }
+
+    /// The repair that should take over the live display, if any.
+    ///
+    /// The live path's slice of [`Self::weighed_repairs`]: only a
+    /// `Replace` counts here, since an offer belongs in a candidate list
+    /// someone is reading, not in text still being typed. This runs on
+    /// every keystroke, so the cheap gates come before the conversion
+    /// that would otherwise be paid to find out they failed.
+    pub(super) fn live_replacement(&mut self, reading: &str, typed: &str) -> Option<String> {
+        if !self.config.auto_correct_n || reading.chars().count() < MIN_AUTO_CORRECTION_CHARS {
+            return None;
+        }
+        let corrected = self.n_corrected_readings(reading).into_iter().next()?;
+        // No fall back to the repaired kana here, unlike the candidate
+        // list: showing raw kana where a conversion stood is a downgrade,
+        // not a suggestion.
+        let text = self.model_candidates(&corrected, 1).into_iter().next()?;
+        let typed = typed.to_string();
+        (self.weigh(reading, Some(&typed), &corrected, &text) == Verdict::Replace).then_some(text)
     }
 
     /// Weigh one repair against the typing. `Offer` whenever there is no

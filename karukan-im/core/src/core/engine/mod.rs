@@ -281,6 +281,7 @@ impl InputMethodEngine {
     pub(super) fn clear_composition(&mut self) {
         self.input_buf.clear();
         self.live.shown = false;
+        self.live.correction = None;
         self.alphabet_cycle = None;
         self.chunks.clear();
         self.chunk_breaks.clear();
