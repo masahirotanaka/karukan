@@ -880,12 +880,24 @@ impl InputMethodEngine {
                         return self.jump_to_source(source);
                     }
 
-                    // Ctrl+1..9: select and commit that candidate. Bare
-                    // digits refine below like any printable character, so
-                    // typing numbers never conflicts with selection.
+                    // Ctrl+1..9: select and commit that candidate. The
+                    // chord is what carries over from composing, where a
+                    // bare digit is still text.
                     if let Some(digit) = key.keysym.digit_value() {
                         return self.select_shown_candidate(digit);
                     }
+                }
+
+                // 1..9 with nothing held: the candidate window is on
+                // screen for the whole of this state, so the numbers
+                // printed beside the candidates are live the way every
+                // other Japanese IME has them. Only here — while composing
+                // the window sits next to text still being typed, and a
+                // digit there is text. An index with no candidate under it
+                // is a no-op rather than a refine, so the same key never
+                // means two things.
+                if let Some(digit) = key.keysym.digit_value() {
+                    return self.select_shown_candidate(digit);
                 }
 
                 // A printable character refines instead of committing:

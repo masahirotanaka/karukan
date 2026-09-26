@@ -97,9 +97,39 @@ fn committed(result: &EngineResult) -> Option<String> {
 }
 
 #[test]
-fn test_bare_digit_during_conversion_refines_instead_of_selecting() {
-    // Digits are plain text input everywhere: during conversion they extend
-    // the reading like any printable char, never select a candidate.
+fn test_bare_digit_during_conversion_selects_candidate() {
+    // The candidate window is up for the whole of this state, so the
+    // numbers printed beside the candidates are live without Ctrl.
+    let mut engine = InputMethodEngine::new();
+    engine.dicts.user = Some(dict_from_json(
+        r#"[{"reading":"あい","candidates":[
+            {"surface":"藍","score":2.0},
+            {"surface":"愛","score":1.0}
+        ]}]"#,
+    ));
+
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_key(Keysym::SPACE));
+    let shown: Vec<String> = engine
+        .candidates()
+        .unwrap()
+        .candidates()
+        .iter()
+        .map(|c| c.text.clone())
+        .collect();
+
+    let result = engine.process_key(&press('2'));
+    assert_eq!(committed(&result).as_deref(), Some(shown[1].as_str()));
+    assert!(matches!(engine.state(), InputState::Empty));
+    assert!(engine.input_buf.is_empty(), "buffer must be cleared");
+}
+
+#[test]
+fn test_bare_digit_with_no_candidate_under_it_is_a_no_op() {
+    // The digit addresses the window, never the reading — so on a short
+    // last page a number with nothing beside it does nothing, rather than
+    // quietly meaning something else.
     let mut engine = InputMethodEngine::new();
     engine.dicts.user = Some(dict_from_json(
         r#"[{"reading":"あい","candidates":[{"surface":"藍","score":1.0}]}]"#,
@@ -108,9 +138,34 @@ fn test_bare_digit_during_conversion_refines_instead_of_selecting() {
     engine.process_key(&press('a'));
     engine.process_key(&press('i'));
     engine.process_key(&press_key(Keysym::SPACE));
-    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+    engine.process_key(&press_key(Keysym::PAGE_DOWN));
+    let page = engine.candidates().unwrap();
+    let short = page.candidates().len() - page.page_start();
+    assert!(short < page.page_size(), "need a partial last page");
 
+    let result = engine.process_key(&press(
+        char::from_digit(page.page_size() as u32, 10).unwrap(),
+    ));
+    assert!(result.consumed, "the key must not reach the application");
+    assert!(committed(&result).is_none());
+    assert_eq!(engine.input_buf.reading(), "あい");
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+}
+
+#[test]
+fn test_bare_digit_while_composing_is_still_text() {
+    // Only the conversion window claims the digits. While composing the
+    // list is a suggestion beside text still being typed, and a digit
+    // there is what it looks like.
+    let mut engine = InputMethodEngine::new();
+    engine.dicts.user = Some(dict_from_json(
+        r#"[{"reading":"あい","candidates":[{"surface":"藍","score":1.0}]}]"#,
+    ));
+
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
     let result = engine.process_key(&press('2'));
+
     assert!(committed(&result).is_none(), "a digit must not commit");
     assert_eq!(engine.input_buf.reading(), "あい2");
 }
