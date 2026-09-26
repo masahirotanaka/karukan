@@ -9,6 +9,7 @@ use crate::config::settings::{CandidateWindow, SpaceStyle, StrategyMode};
 
 use super::super::candidate::CandidateList;
 use super::super::preedit::Preedit;
+use super::mode::FormSet;
 
 /// Action to be performed by the framework/UI layer
 #[derive(Debug, Clone)]
@@ -283,6 +284,10 @@ pub(in crate::core) struct AlphabetCycle {
     pub produced: String,
     /// Its index in the form list.
     pub index: usize,
+    /// Which key's set of forms that list was. A press on another of
+    /// these keys re-cuts `origin` into its own set rather than stepping
+    /// this one.
+    pub set: FormSet,
 }
 
 /// One internal chunk of the composing buffer with its cached model

@@ -1,4 +1,6 @@
 //! Ctrl+L: hand back what was typed, as Latin text (mozc's F10 / F9).
+//! Ctrl+O / Ctrl+P: the same keystrokes in ATOK's F8 「半角変換」 and
+//! F9 「全角英字変換」 forms.
 
 use super::*;
 
@@ -202,4 +204,95 @@ fn ctrl_shift_l_still_toggles_live_conversion() {
     assert_eq!(engine.live.enabled, !before);
     // …and left the composition alone.
     assert_ne!(preedit(&engine), "hello");
+}
+
+fn ctrl_o(engine: &mut InputMethodEngine) -> EngineResult {
+    engine.process_key(&press_ctrl(Keysym::KEY_O))
+}
+
+fn ctrl_p(engine: &mut InputMethodEngine) -> EngineResult {
+    engine.process_key(&press_ctrl(Keysym::KEY_P))
+}
+
+#[test]
+fn ctrl_o_walks_the_half_width_forms() {
+    // ATOK's F8: half-width katakana first — that is what 半角 means for
+    // kana — then the half-width Latin forms.
+    let mut engine = InputMethodEngine::new();
+    type_keys(&mut engine, "konnpyu-ta");
+    assert_eq!(preedit(&engine), "こんぴゅーた");
+
+    for expected in [
+        "ｺﾝﾋﾟｭｰﾀ",
+        "konnpyu-ta",
+        "KONNPYU-TA",
+        "Konnpyu-ta",
+        // …and round again, always re-cut from the original typing.
+        "ｺﾝﾋﾟｭｰﾀ",
+    ] {
+        ctrl_o(&mut engine);
+        assert_eq!(preedit(&engine), expected);
+    }
+}
+
+#[test]
+fn ctrl_p_walks_the_full_width_latin_forms() {
+    // ATOK's F9: 小文字 → 大文字 → 先頭大文字, all full-width.
+    let mut engine = InputMethodEngine::new();
+    type_keys(&mut engine, "hello");
+
+    for expected in ["ｈｅｌｌｏ", "ＨＥＬＬＯ", "Ｈｅｌｌｏ", "ｈｅｌｌｏ"] {
+        ctrl_p(&mut engine);
+        assert_eq!(preedit(&engine), expected);
+    }
+}
+
+#[test]
+fn the_form_keys_hand_the_typing_to_each_other() {
+    // Each key re-cuts the *original* keystrokes into its own set, so
+    // 半角 and 全角英字 pass the same reading back and forth. Cutting the
+    // other key's output instead would strand the kana after one press.
+    let mut engine = InputMethodEngine::new();
+    type_keys(&mut engine, "konnpyu-ta");
+
+    ctrl_p(&mut engine);
+    assert_eq!(preedit(&engine), "ｋｏｎｎｐｙｕ－ｔａ");
+    ctrl_o(&mut engine);
+    assert_eq!(preedit(&engine), "ｺﾝﾋﾟｭｰﾀ");
+    ctrl_l(&mut engine);
+    assert_eq!(preedit(&engine), "konnpyu-ta");
+}
+
+#[test]
+fn ctrl_o_names_the_walk_in_the_aux_line() {
+    let mut engine = InputMethodEngine::new();
+    type_keys(&mut engine, "konnpyu-ta");
+
+    let aux = last_aux_text(&ctrl_o(&mut engine)).unwrap();
+    assert!(aux.contains("半角変換"), "aux was {aux}");
+    assert!(aux.contains("[半]カタカナ"), "aux was {aux}");
+
+    let aux = last_aux_text(&ctrl_p(&mut engine)).unwrap();
+    assert!(aux.contains("全角英字変換"), "aux was {aux}");
+}
+
+#[test]
+fn the_form_keys_work_from_the_candidate_window() {
+    // Same as Ctrl+L: the composition behind the candidates still holds
+    // the keystrokes, so the conversion dissolves into the new form.
+    let mut engine = InputMethodEngine::new();
+    type_keys(&mut engine, "kyou");
+    engine.process_key(&press_key(Keysym::SPACE));
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+
+    ctrl_p(&mut engine);
+    assert!(matches!(engine.state(), InputState::Composing { .. }));
+    assert_eq!(preedit(&engine), "ｋｙｏｕ");
+}
+
+#[test]
+fn ctrl_o_on_an_empty_composition_is_passed_through() {
+    let mut engine = InputMethodEngine::new();
+    assert!(!ctrl_o(&mut engine).consumed);
+    assert!(!ctrl_p(&mut engine).consumed);
 }

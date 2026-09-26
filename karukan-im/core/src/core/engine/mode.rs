@@ -1,16 +1,45 @@
 //! Mode switching (katakana, alphabet, live conversion)
 
+use karukan_engine::kana::{hiragana_to_katakana, katakana_to_half_width};
 use karukan_engine::width::{to_full_width, to_half_width};
 use tracing::debug;
 
 use super::*;
 
-/// The Latin forms Ctrl+L walks, in order: what was typed, then the case
-/// and width variants — mozc's F10 half-width set followed by its F9
-/// full-width one. A form that repeats an earlier one (`123` upper-cased
-/// is still `123`) drops out, so every press lands somewhere new and a
-/// walk over digits is one stop long.
-fn alphabet_forms(origin: &str) -> Vec<(String, &'static str)> {
+/// Which walk a press is on. One key, one set of forms: a press only ever
+/// moves within its own, and a press on a different key restarts from the
+/// top of that key's set — the way ATOK's F8/F9/F10 hand the same reading
+/// to one another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::core) enum FormSet {
+    /// Ctrl+L: every Latin form, half-width first. karukan's own key,
+    /// covering ATOK's F10 and F9 in one walk.
+    Latin,
+    /// Ctrl+O — ATOK's F8 「半角変換」: half-width katakana, then the
+    /// half-width Latin forms.
+    Half,
+    /// Ctrl+P — ATOK's F9 「全角英字変換」: the full-width Latin forms,
+    /// lowercase → uppercase → initial capital.
+    FullLatin,
+}
+
+impl FormSet {
+    /// What the aux line calls this walk.
+    fn name(self) -> &'static str {
+        match self {
+            FormSet::Latin => "英数変換",
+            FormSet::Half => "半角変換",
+            FormSet::FullLatin => "全角英字変換",
+        }
+    }
+}
+
+/// The forms one key walks, in order. `origin` is the keystrokes every
+/// Latin form is cut from; `reading` is the kana they make, which is what
+/// half-width katakana has to come from. A form that repeats an earlier
+/// one (`123` upper-cased is still `123`) drops out, so every press lands
+/// somewhere new and a walk over digits is one stop long.
+fn character_forms(origin: &str, reading: &str, set: FormSet) -> Vec<(String, &'static str)> {
     let half = to_half_width(origin);
     let upper = half.to_ascii_uppercase();
     let mut chars = half.chars();
@@ -19,15 +48,33 @@ fn alphabet_forms(origin: &str) -> Vec<(String, &'static str)> {
         None => String::new(),
     };
 
+    let table: Vec<(String, &'static str)> = match set {
+        FormSet::Latin => vec![
+            (half.clone(), "[半]英字"),
+            (upper.clone(), "[半]英大文字"),
+            (capitalized, "[半]先頭大文字"),
+            (to_full_width(&half), "[全]英字"),
+            (to_full_width(&upper), "[全]英大文字"),
+        ],
+        FormSet::Half => vec![
+            (
+                katakana_to_half_width(&hiragana_to_katakana(reading)),
+                "[半]カタカナ",
+            ),
+            (half.clone(), "[半]英字"),
+            (upper.clone(), "[半]英大文字"),
+            (capitalized, "[半]先頭大文字"),
+        ],
+        FormSet::FullLatin => vec![
+            (to_full_width(&half), "[全]英字"),
+            (to_full_width(&upper), "[全]英大文字"),
+            (to_full_width(&capitalized), "[全]先頭大文字"),
+        ],
+    };
+
     let mut forms: Vec<(String, &'static str)> = Vec::new();
-    for (text, label) in [
-        (half.clone(), "[半]英字"),
-        (upper.clone(), "[半]英大文字"),
-        (capitalized, "[半]先頭大文字"),
-        (to_full_width(&half), "[全]英字"),
-        (to_full_width(&upper), "[全]英大文字"),
-    ] {
-        if !forms.iter().any(|(seen, _)| *seen == text) {
+    for (text, label) in table {
+        if !text.is_empty() && !forms.iter().any(|(seen, _)| *seen == text) {
             forms.push((text, label));
         }
     }
@@ -94,9 +141,10 @@ impl InputMethodEngine {
         EngineResult::consumed().with_action(aux)
     }
 
-    /// Ctrl+L: put back what was typed, as Latin text.
+    /// Ctrl+L / Ctrl+O / Ctrl+P: put back what was typed, in the form
+    /// `set` names.
     ///
-    /// The composition is replaced by its own keystrokes (`ぷろぐらむ` →
+    /// The composition is replaced by one of its own forms (`ぷろぐらむ` →
     /// `puroguramu`) and kana input carries straight on, so the Japanese
     /// after the Latin word costs no mode key: the converted text is
     /// settled, and the keystrokes that follow romanize as usual
@@ -104,32 +152,39 @@ impl InputMethodEngine {
     /// itself in ends here, which is what brings Shift+letter's Alphabet
     /// back to kana; a deliberate Katakana mode is left alone.
     ///
-    /// Pressing again walks the case and width forms in
-    /// [`alphabet_forms`] — the walk is keyed on the text, not the mode,
-    /// so it survives the switch. Pressing after anything else starts
-    /// over from the current typing. To keep typing *Latin* after the
-    /// conversion, Shift+letter opens direct input as it always does.
+    /// Pressing the same key again walks that set's forms — the walk is
+    /// keyed on the text, not the mode, so it survives the switch.
+    /// Pressing a *different* one of these keys re-cuts the same original
+    /// keystrokes into its own set, so 半角 and 全角英字 hand the reading
+    /// back and forth without a retype. Pressing after anything else
+    /// starts over from the current typing. To keep typing *Latin* after
+    /// the conversion, Shift+letter opens direct input as it always does.
     ///
     /// Works from Conversion too: the composition is untouched while
     /// candidates are up, so the keystrokes are still there to hand back.
-    pub(super) fn convert_to_alphabet(&mut self) -> EngineResult {
+    pub(super) fn convert_to_form(&mut self, set: FormSet) -> EngineResult {
         if self.input_buf.is_empty() {
             return EngineResult::not_consumed();
         }
 
-        // A press that follows its own output continues the walk.
-        let continuing = self
+        // A press that follows one of these keys' own output keeps the
+        // keystrokes they were all cut from; only the same key continues
+        // the walk, a different one opens its set at the top.
+        let standing = self
             .alphabet_cycle
             .as_ref()
             .filter(|cycle| cycle.produced == self.input_buf.display());
-        let (origin, step) = match continuing {
-            Some(cycle) => (cycle.origin.clone(), cycle.index + 1),
+        let (origin, step) = match standing {
+            Some(cycle) if cycle.set == set => (cycle.origin.clone(), cycle.index + 1),
+            Some(cycle) => (cycle.origin.clone(), 0),
             None => (self.input_buf.raw(), 0),
         };
 
-        let forms = alphabet_forms(&origin);
+        let reading = self.converters.romaji.convert_flush(&origin);
+        let forms = character_forms(&origin, &reading, set);
         if forms.is_empty() {
-            // Nothing was typed that has a Latin form (an empty origin).
+            // Nothing was typed that has a form in this set (an empty
+            // origin, or kana-only input asked for its Latin forms).
             return EngineResult::consumed();
         }
         // A press must always change something. Starting a walk on text
@@ -141,7 +196,7 @@ impl InputMethodEngine {
             step
         };
         let (text, label) = forms[step % forms.len()].clone();
-        debug!("Ctrl+L: {} → {} ({})", origin, text, label);
+        debug!("{}: {} → {} ({})", set.name(), origin, text, label);
 
         // The live display and the chunks were built from a reading that
         // no longer exists, so the whole composition-scoped set goes.
@@ -157,10 +212,11 @@ impl InputMethodEngine {
             origin,
             produced: text,
             index: step % forms.len(),
+            set,
         });
 
         let preedit = self.set_composing_state();
-        let aux = format!("{} 英数変換: {}", self.mode_indicator(), label);
+        let aux = format!("{} {}: {}", self.mode_indicator(), set.name(), label);
         EngineResult::consumed()
             .with_action(EngineAction::UpdatePreedit(preedit))
             .with_action(EngineAction::HideCandidates)

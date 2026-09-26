@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use tracing::debug;
 
 use super::filter::source_for_key;
+use super::mode::FormSet;
 use super::*;
 
 /// Maximum number of learning candidates to show
@@ -834,11 +835,12 @@ impl InputMethodEngine {
                 self.in_composing(false, |e| e.process_key_composing(key))
             }
             _ => {
-                // Ctrl+N / Ctrl+P: emacs-style candidate navigation
+                // Ctrl+N: emacs-style candidate navigation. Ctrl+P is
+                // ATOK's 全角英字変換 here, so the step back is ↑ /
+                // Shift+Space / Shift+Tab.
                 if key.modifiers.control_key {
                     match key.keysym {
                         Keysym::KEY_N | Keysym::KEY_N_UPPER => return self.next_candidate(),
-                        Keysym::KEY_P | Keysym::KEY_P_UPPER => return self.prev_candidate(),
                         // Ctrl+R / Ctrl+T: cycle the source filter. Both
                         // keysym cases — some environments fold Shift into
                         // an uppercase keysym; direction must not change.
@@ -857,7 +859,15 @@ impl InputMethodEngine {
                         // typing as Latin text — the composition behind
                         // the candidates still holds the keystrokes.
                         Keysym::KEY_L | Keysym::KEY_L_UPPER => {
-                            return self.convert_to_alphabet();
+                            return self.convert_to_form(FormSet::Latin);
+                        }
+                        // Ctrl+O / Ctrl+P: the same, in ATOK's F8
+                        // 「半角変換」 and F9 「全角英字変換」 forms.
+                        Keysym::KEY_O | Keysym::KEY_O_UPPER => {
+                            return self.convert_to_form(FormSet::Half);
+                        }
+                        Keysym::KEY_P | Keysym::KEY_P_UPPER => {
+                            return self.convert_to_form(FormSet::FullLatin);
                         }
                         // Ctrl+A/B/E/F: the same caret moves as while
                         // composing, dropping back to editing like the
@@ -875,7 +885,7 @@ impl InputMethodEngine {
                         _ => {}
                     }
 
-                    // Ctrl+Y/U/I/O: jump straight to one source's view.
+                    // Ctrl+I: jump straight to one source's view.
                     if let Some(source) = source_for_key(key.keysym) {
                         return self.jump_to_source(source);
                     }

@@ -1,6 +1,7 @@
 //! Composing input handling (Empty and Composing states)
 
 use super::filter::source_for_key;
+use super::mode::FormSet;
 use super::*;
 
 /// Append candidates to `target`, skipping duplicates by text.
@@ -242,7 +243,17 @@ impl InputMethodEngine {
                 // Ctrl+L: hand back what was typed, as Latin text
                 // (Ctrl+Shift+L is the live-conversion toggle, taken
                 // before dispatch, so only the bare chord arrives here)
-                Keysym::KEY_L | Keysym::KEY_L_UPPER => return self.convert_to_alphabet(),
+                Keysym::KEY_L | Keysym::KEY_L_UPPER => {
+                    return self.convert_to_form(FormSet::Latin);
+                }
+                // Ctrl+O / Ctrl+P: ATOK's F8 「半角変換」 and F9
+                // 「全角英字変換」, on the same keys ATOK puts them.
+                Keysym::KEY_O | Keysym::KEY_O_UPPER => {
+                    return self.convert_to_form(FormSet::Half);
+                }
+                Keysym::KEY_P | Keysym::KEY_P_UPPER => {
+                    return self.convert_to_form(FormSet::FullLatin);
+                }
                 // Ctrl+A: move to beginning (Emacs-style Home)
                 Keysym::KEY_A | Keysym::KEY_A_UPPER => return self.move_caret_home(),
                 // Ctrl+B: move left (Emacs-style Left)
@@ -262,7 +273,7 @@ impl InputMethodEngine {
                 }
                 _ => {}
             }
-            // Ctrl+Y/U/I/O: jump straight to one source's view.
+            // Ctrl+I: jump straight to one source's view.
             if let Some(source) = source_for_key(key.keysym) {
                 return self.jump_to_source(source);
             }
