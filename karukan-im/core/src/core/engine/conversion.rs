@@ -385,7 +385,18 @@ impl InputMethodEngine {
             // んえこが…). Dropping them here is what keeps the score
             // honest: 「んエコが好きです」 is the one reading the model
             // liked better than 「猫が好きです」.
-            if corrected.starts_with('ん') || corrected == reading || out.contains(&corrected) {
+            //
+            // んん is the same mistake at the other end. A repair only
+            // makes sense where a keystroke went missing, and next to an
+            // `n` that is already doubled nothing did: `sasakamesanntoha`
+            // (ささかめさんとは) repairs to ささかめさんんとは, which the
+            // model happily converts to 笹亀さんんとは. Japanese does not
+            // put two ん together, so no reading here is worth the risk.
+            if corrected.starts_with('ん')
+                || corrected.contains("んん")
+                || corrected == reading
+                || out.contains(&corrected)
+            {
                 continue;
             }
             out.push(corrected);

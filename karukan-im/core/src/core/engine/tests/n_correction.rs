@@ -150,6 +150,19 @@ fn a_repair_that_opens_with_n_is_never_offered() {
 }
 
 #[test]
+fn a_repair_that_doubles_an_n_is_never_offered() {
+    // `sasakamesanntoha` already spells its ん out in full; repairing it
+    // gives ささかめさんんとは, and the model converts that just as
+    // happily into 笹亀さんんとは. Japanese never puts two ん together.
+    let engine = convert("sasakamesanntoha");
+    assert!(
+        !corrections(&engine).iter().any(|t| t.contains("んん")),
+        "{:?}",
+        corrections(&engine)
+    );
+}
+
+#[test]
 fn nothing_is_replaced_without_a_model() {
     // The head of the list is the model's answer to what was typed, and
     // with no model that is the reading itself. A repair can only ever
