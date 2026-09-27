@@ -21,6 +21,11 @@ pub(super) use split::is_japanese;
 
 use super::*;
 
+/// Beam width the chunk conversion retries at when the model answered a
+/// kana reading in the latin alphabet. Small: the clean answer is normally
+/// the one right behind it.
+const ALPHABET_RETRY_CANDIDATES: usize = 3;
+
 impl InputMethodEngine {
     /// Auto-suggest over the composing buffer via [`Self::convert_chunks`],
     /// storing the chunks for display. Returns the concatenated conversion,
@@ -28,11 +33,20 @@ impl InputMethodEngine {
     /// Input no longer than one chunk — the common case — is a single
     /// whole-buffer model call.
     pub(super) fn chunked_auto_suggest(&mut self) -> Option<String> {
-        let full_reading = self.input_buf.reading();
-        if full_reading.is_empty() {
+        let typed_reading = self.input_buf.reading();
+        if typed_reading.is_empty() {
             self.chunks.clear();
             return None;
         }
+        // A latin word typed inline is read back as itself before the
+        // buffer is chunked, so the whole pipeline downstream — the
+        // boundaries, the model call, the live text — works on
+        // 「closeして」 rather than the 「cぉせして」 the romaji rules made
+        // of it. The latin run is not Japanese, so `group_chunks` walls it
+        // off and only the kana around it reaches the model.
+        let full_reading = self
+            .latin_mixed_reading()
+            .unwrap_or_else(|| typed_reading.clone());
         let text: Vec<char> = full_reading.chars().collect();
         let base_ctx = self.truncate_context_for_api();
 
@@ -42,7 +56,10 @@ impl InputMethodEngine {
         self.chunks = chunks;
         self.log_chunk_state("convert");
 
-        (combined != full_reading).then_some(combined)
+        // Compared against what was *typed*: a latin split that the model
+        // then left alone is still a suggestion — 「closeして」 is not
+        // 「cぉせして」, which is the display it has to replace.
+        (combined != typed_reading).then_some(combined)
     }
 
     /// The single implementation of the chunk-grid conversion: split with
@@ -159,11 +176,27 @@ impl InputMethodEngine {
 
     /// Model conversion of one chunk's `reading` given `lctx`, falling back to
     /// the reading itself when the model yields nothing.
+    ///
+    /// The model spells loanwords back in English given half a chance
+    /// (「クローズシテ」 → 「closeして」 sits second on its own beam), and
+    /// that answer belongs to `closesite`, not to the kana that was typed.
+    /// When the greedy answer is that, the chunk is beamed once and the
+    /// first alternative that stayed in Japanese takes it. Only a
+    /// contaminated chunk pays for the second call, and a chunk with no
+    /// clean alternative keeps the greedy answer rather than none.
     fn convert_chunk(&mut self, reading: &str, lctx: &str) -> String {
-        self.run_kana_kanji_conversion(reading, lctx, 1)
+        let greedy = self
+            .run_kana_kanji_conversion(reading, lctx, 1)
             .into_iter()
             .next()
-            .unwrap_or_else(|| reading.to_string())
+            .unwrap_or_else(|| reading.to_string());
+        if !self.drops_alphabet_surface(reading, &greedy) {
+            return greedy;
+        }
+        self.run_kana_kanji_conversion(reading, lctx, ALPHABET_RETRY_CANDIDATES)
+            .into_iter()
+            .find(|text| !self.drops_alphabet_surface(reading, text))
+            .unwrap_or(greedy)
     }
 
     /// Insert a manual chunk boundary at the caret, then reconvert. A

@@ -300,6 +300,14 @@ impl InputMethodEngine {
                 if candidates.len() >= limit {
                     break;
                 }
+                // 「くろーず → close」 is the system dictionary offering an
+                // alphabet spelling of a kana reading; the user's own
+                // dictionary is exempt, having declared that spelling.
+                if source == CandidateSource::Dictionary
+                    && self.drops_alphabet_surface(key, &cand.surface)
+                {
+                    continue;
+                }
                 if seen.insert(cand.surface.clone()) {
                     candidates.push(AnnotatedCandidate::new(cand.surface.clone(), source));
                 }
@@ -330,6 +338,13 @@ impl InputMethodEngine {
                 for m in matches {
                     if budget == 0 || candidates.len() >= limit {
                         break;
+                    }
+                    // Same for a completion: 「えぴっく」 must not finish
+                    // as `Epik High` when nothing latin was typed.
+                    if source == CandidateSource::Dictionary
+                        && self.drops_alphabet_surface(m.reading, &m.candidate.surface)
+                    {
+                        continue;
                     }
                     if seen.insert(m.candidate.surface.clone()) {
                         budget -= 1;
@@ -527,7 +542,16 @@ impl InputMethodEngine {
         // just means no model candidates: symbol-only and early keystrokes
         // still get dictionary/rewriter/fallback candidates. Loading here
         // synchronously would block the key-event thread on the download.
-        let candidates = self.model_candidates(reading, num_candidates);
+        let mut candidates = self.model_candidates(reading, num_candidates);
+        // The model's own latin spellings of a kana reading go the way the
+        // dictionary's and the learning cache's do — unless that would
+        // empty the list, in which case its answer is all there is.
+        if candidates
+            .iter()
+            .any(|text| !self.drops_alphabet_surface(reading, text))
+        {
+            candidates.retain(|text| !self.drops_alphabet_surface(reading, text));
+        }
 
         let hiragana = reading.to_string();
         let katakana = karukan_engine::hiragana_to_katakana(reading);
@@ -688,6 +712,12 @@ impl InputMethodEngine {
                 if candidates.len() >= max {
                     break;
                 }
+                // A learned 「えぴっく → EPIC」 is still an alphabet
+                // spelling of a kana reading: picking it once should not
+                // make it what every later 「えぴっく」 converts to.
+                if self.drops_alphabet_surface(reading, &surface) {
+                    continue;
+                }
                 if seen.insert(surface.clone()) {
                     candidates.push(Candidate {
                         text: surface,
@@ -713,6 +743,9 @@ impl InputMethodEngine {
                 if !expansions.iter().any(|e| rest.starts_with(e.as_str())) {
                     continue;
                 }
+            }
+            if self.drops_alphabet_surface(&full_reading, &surface) {
+                continue;
             }
             if seen.insert(surface.clone()) {
                 candidates.push(Candidate {

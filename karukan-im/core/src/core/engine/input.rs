@@ -18,6 +18,11 @@ impl InputMethodEngine {
     pub(super) fn refresh_input_state(&mut self) -> EngineResult {
         let full_reading = self.input_buf.reading();
 
+        // A latin word with kana typed straight onto it — 「EPICha」 —
+        // has to keep converting in alphabet mode, where the reading is
+        // all latin and neither test below would let it through.
+        let latin_mixed = self.latin_mixed_reading().is_some();
+
         // Alphabet mode with active live conversion but no kana left to convert:
         // preserve the existing conversion display without re-running the model.
         // (When the buffer still contains kana we fall through and reconvert below,
@@ -25,6 +30,7 @@ impl InputMethodEngine {
         if self.mode.current() == InputMode::Alphabet
             && !self.live_text().is_empty()
             && !karukan_engine::contains_kana(&full_reading)
+            && !latin_mixed
         {
             let preedit = self.set_composing_state();
             return EngineResult::consumed().with_action(EngineAction::UpdatePreedit(preedit));
@@ -36,7 +42,8 @@ impl InputMethodEngine {
         let convert = !self.suppress_suggest
             && !full_reading.is_empty()
             && (self.mode.current() != InputMode::Alphabet
-                || karukan_engine::contains_kana(&full_reading));
+                || karukan_engine::contains_kana(&full_reading)
+                || latin_mixed);
         let candidates = if convert {
             let reading = full_reading.clone();
             self.chunked_auto_suggest()

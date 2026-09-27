@@ -77,6 +77,8 @@ impl InputMethodEngine {
 
         self.init_system_dictionary(settings.conversion.dict_path.as_deref());
         self.init_user_dictionaries();
+        // Once both are in: the list is built from whatever is loaded.
+        self.refresh_latin_words();
         self.init_learning_cache(
             settings.learning.enabled,
             LearningConfig {
@@ -313,5 +315,24 @@ impl InputMethodEngine {
                 debug!("Failed to merge user dictionaries: {}", e);
             }
         }
+    }
+
+    /// Rebuild the latin word list from whatever dictionaries are loaded.
+    ///
+    /// One pass over every entry — ~2M of them in the shipped dictionary,
+    /// under a second — and it only runs when a dictionary is installed,
+    /// never on a keystroke. The list is what gives the latin split a word
+    /// boundary: `closesite` is `close` + して only because `close` is a
+    /// surface the dictionary already answers 「くろーず」 with.
+    pub(super) fn refresh_latin_words(&mut self) {
+        let mut words = karukan_engine::LatinWords::new();
+        for dict in [self.dicts.system.as_ref(), self.dicts.user.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            words.add_dictionary(dict);
+        }
+        debug!("Latin word list rebuilt: {} words", words.len());
+        self.dicts.latin = words;
     }
 }

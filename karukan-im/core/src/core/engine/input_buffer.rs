@@ -336,6 +336,21 @@ impl InputBuffer {
             .collect()
     }
 
+    /// The keystrokes behind [`Self::reading`]: `raw` minus the active
+    /// run. What the latin split reads, since it has to see `close`
+    /// where the reading only has 「cぉせ」 — and must not see the
+    /// half-typed tail, which is not a word yet.
+    pub fn raw_reading(&self) -> String {
+        let active = self.active_run();
+        let mut out = String::new();
+        for (i, element) in self.elements.iter().enumerate() {
+            if !active.contains(&i) {
+                element.push_raw(&mut out);
+            }
+        }
+        out
+    }
+
     /// Caret position within [`Self::reading`]. The active run sits just
     /// before the cursor and is excluded from the reading, so this is the
     /// caret minus the active run's length.

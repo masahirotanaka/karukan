@@ -6,6 +6,8 @@
 [conversion]
 live_conversion = true          # ライブ変換を起動時に有効化（Ctrl+Shift+L で実行中も切替。既定ON）
 auto_correct_n = true           # 「ん」の n の打ち忘れをモデルの確信度で自動補正（[詳細](nn-correction.md)）
+latin_input = true              # 打鍵中の英単語を英字のまま読む（closesite → closeして、[詳細](latin-input.md)）
+alphabet_from_kana = false      # かなだけの読みに英字表記の候補を出す（既定OFF、[詳細](latin-input.md)）
 chunk_chars = 30                # 一度にAI変換する Chunk の最大文字数（[Chunk](chunking.md) 参照）
 chunk_symbols = 1               # Chunk に残せる記号（、。！？など）の数
 chunk_digits = 0                # Chunk に残せる数字の桁数（0 = 数字はAI変換にかけない）
@@ -93,6 +95,14 @@ my-model = "/home/user/models/my-model.gguf"
 打った通りの読みより十分に尤もらしいと判定できたときだけです。`auto_correct_n = false` に
 すると差し替えをやめ、「もしかして」候補として並べるだけになります。判定の仕組み・安全装置・
 既知の限界は [「ん」の打ち忘れ補正](nn-correction.md) を参照してください。
+
+## 英字混じり入力
+
+`closesite` → 「closeして」、`EPICha` → 「EPICは」。ローマ字として読めない打鍵の中から
+英単語を見つけ、打ったとおりの英字として読み直します。単語かどうかはシステム辞書の
+英字表記で判定するので、辞書が無いときは何もしません。裏返しに、読みが全部かなのときは
+英字表記の候補を出しません（`alphabet_from_kana = false`）。仕組みと切れ目の決め方は
+[英字混じり入力](latin-input.md) を参照してください。
 
 ## 記号・半角全角
 

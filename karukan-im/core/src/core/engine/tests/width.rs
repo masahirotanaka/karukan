@@ -202,6 +202,10 @@ fn dictionary_surfaces_keep_the_width_they_were_written_at() {
         ..WidthRules::default()
     });
     engine.converters.kanji = None;
+    // `Yahoo!` is an alphabet spelling of a kana reading, which the
+    // shipped default withholds (`alphabet_from_kana`). This test is
+    // about the width it keeps once it is offered, so it asks for it.
+    engine.config.alphabet_from_kana = true;
     engine.dicts.system = Some(dict_from_json(
         r#"[{"reading":"かぶ","candidates":[{"surface":"Yahoo!","score":1.0}]}]"#,
     ));

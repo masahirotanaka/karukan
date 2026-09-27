@@ -202,6 +202,19 @@ pub struct ConversionSettings {
     /// rides as a 「もしかして」 candidate; on, it costs two extra scoring
     /// passes on the Space that opens a conversion.
     pub auto_correct_n: bool,
+    /// Read a latin word typed inline back as itself, using the system
+    /// dictionary's own latin surfaces as the word list: `closesite` →
+    /// 「closeして」, `EPICha` → 「EPICは」. Romaji has no other way to say
+    /// "these letters are English", and the keystrokes that reach here
+    /// (「cぉせして」) are not a reading of anything.
+    pub latin_input: bool,
+    /// Offer an alphabet surface for a reading that is all kana — the
+    /// dictionary's 「くろーず → close」, the model's 「closeして」, a learned
+    /// 「えぴっく → EPIC」. Off by default: alphabet is what alphabet
+    /// keystrokes produce, and `latin_input` is how those are typed.
+    /// A user dictionary entry is exempt either way — registering one is
+    /// saying outright that this reading has that surface.
+    pub alphabet_from_kana: bool,
 }
 
 /// Learning cache settings

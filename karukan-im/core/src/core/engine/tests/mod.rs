@@ -17,6 +17,7 @@ mod cursor;
 mod date;
 mod emoji;
 mod katakana;
+mod latin_input;
 mod learning;
 mod live_conversion;
 mod mode_toggle;

@@ -406,6 +406,17 @@ impl Dictionary {
         Ok(self.entries.len())
     }
 
+    /// Every candidate surface in the dictionary, in entry order.
+    ///
+    /// A plain scan — the trie is keyed by reading, so there is no index
+    /// to go the other way. Callers that need one build it once from this
+    /// (see `latin::LatinWords`).
+    pub fn surfaces(&self) -> impl Iterator<Item = &str> {
+        self.entries
+            .iter()
+            .flat_map(|entry| entry.candidates.iter().map(|c| c.surface.as_str()))
+    }
+
     /// Search entries by surface form (substring match).
     ///
     /// Returns a list of (reading, surface, score) tuples where surface contains `query`.

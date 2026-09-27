@@ -1,6 +1,7 @@
 pub mod dict;
 pub mod kana;
 pub mod kanji;
+pub mod latin;
 pub mod learning;
 pub mod rewriter;
 pub mod romaji;
@@ -12,6 +13,9 @@ pub use kana::{
     katakana_to_hiragana, normalize_nfkc,
 };
 pub use kanji::{KanaKanjiConverter, ModelSource};
+pub use latin::{
+    LatinWords, has_latin, has_latin_beyond, split_latin_mixed, split_uppercase_mixed,
+};
 pub use learning::{LearningCache, LearningConfig};
 pub use rewriter::{
     AlphabetRewriter, DateConfig, DatePhrase, DateRewriter, EmojiRewriter,

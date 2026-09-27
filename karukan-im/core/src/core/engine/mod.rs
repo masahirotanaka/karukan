@@ -12,6 +12,7 @@ mod filter;
 mod init;
 mod input;
 mod input_buffer;
+mod latin;
 mod mode;
 mod model;
 mod strategy;

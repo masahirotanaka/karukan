@@ -106,6 +106,14 @@ pub struct EngineConfig {
     /// Let a repaired reading replace what was typed when the model is far
     /// surer of it — see `auto_correction`.
     pub auto_correct_n: bool,
+    /// Read a latin word typed inline back as itself: `closesite` →
+    /// 「closeして」, `EPICha` → 「EPICは」 (`karukan_engine::latin`).
+    pub latin_input: bool,
+    /// Offer an alphabet surface for a reading that is all kana — the
+    /// dictionary's 「くろーず → close」, the model's 「closeして」, a learned
+    /// 「えぴっく → EPIC」. Off by default: alphabet is what alphabet
+    /// keystrokes produce, and `latin_input` is how those are typed.
+    pub alphabet_from_kana: bool,
     /// When the candidate window (aux line included) opens
     pub candidate_window: CandidateWindow,
     /// Which symbol the `,` `.` `/` `[` `]` keys type
@@ -141,6 +149,8 @@ impl EngineConfig {
             verbose: settings.display.verbose,
             live_conversion: settings.conversion.live_conversion,
             auto_correct_n: settings.conversion.auto_correct_n,
+            latin_input: settings.conversion.latin_input,
+            alphabet_from_kana: settings.conversion.alphabet_from_kana,
             candidate_window: settings.display.candidate_window,
             symbol: settings.symbol.style(),
             width: settings.width,
@@ -167,6 +177,8 @@ impl Default for EngineConfig {
             verbose: false,
             live_conversion: false,
             auto_correct_n: true,
+            latin_input: true,
+            alphabet_from_kana: false,
             candidate_window: CandidateWindow::default(),
             symbol: SymbolStyle::default(),
             width: WidthRules::default(),
@@ -339,6 +351,11 @@ pub(in crate::core) struct Dictionaries {
     pub system: Option<Dictionary>,
     /// User dictionary (merged from user_dict_paths)
     pub user: Option<Dictionary>,
+    /// The latin surfaces both dictionaries know, as a word list. Built
+    /// once when a dictionary loads (`refresh_latin_words`) and read on
+    /// every keystroke by the latin split, which needs a word boundary
+    /// romaji cannot give it. Empty until then, which turns the split off.
+    pub latin: karukan_engine::LatinWords,
 }
 
 /// Conversion model dispatch strategy based on input length

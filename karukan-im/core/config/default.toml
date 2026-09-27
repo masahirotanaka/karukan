@@ -50,6 +50,15 @@ live_conversion = true
 # 十分に尤もらしいときだけ差し替える（docs/nn-correction.md）。
 # false にすると差し替えず、「もしかして」候補として並べるだけになる。
 auto_correct_n = true
+# ローマ字入力の途中に打った英単語を、打ったとおりの英字として読み直す。
+# 「closesite」→「closeして」、「EPICha」→「EPICは」。単語かどうかはシステム辞書に
+# 入っている英字表記（約6万語）で判定するので、辞書が無いときは何もしない。
+latin_input = true
+# 読みが全部かなのときに、英字表記の候補を出すかどうか。既定の false では
+# 「くろーず」に close、「えぴっく」に EPIC（学習済みでも）を出さない。
+# 英字は英字で打つ（latin_input）という住み分け。自分で登録したユーザー辞書は
+# この設定に関わらず常に出る。
+alphabet_from_kana = false
 # ユーザー辞書: ~/.local/share/karukan-im/user_dicts/ に辞書ファイルを配置（Mozc TSV or KRKN binary）
 
 # 変換モデル。model / light_model はここのキーを参照する。値は 2 通り:
