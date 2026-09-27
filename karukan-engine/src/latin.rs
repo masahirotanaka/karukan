@@ -173,7 +173,14 @@ fn split_spans(
                 continue;
             }
             let word: String = span.iter().collect();
-            if !words.contains(&word) {
+            // The run has to be a word the dictionary knows *and* one that
+            // romaji cannot already read. `kyo` is both a surface (京) and
+            // 「きょ」, and without this test the `kyo` of `kyou` outranks
+            // the `web` of `websaito` for being no shorter and further
+            // left — 「kyoう、webサイトに…」. A run that reads cleanly is
+            // not what the junk was asking about; only one that does not
+            // explains anything.
+            if !words.contains(&word) || as_kana(romaji, &word).is_some() {
                 continue;
             }
             let head: String = chars[..start].iter().collect();
@@ -288,6 +295,23 @@ mod tests {
         // their plain reading.
         assert_eq!(split("closesite", &["site"]), None);
         assert_eq!(split("closesite", &[]), None);
+    }
+
+    #[test]
+    fn a_run_romaji_can_already_read_is_not_a_word() {
+        // `kyo` is 京 in the dictionary and 「きょ」 in the rule table; the
+        // junk in `kyou,websaito…` is the `b` of `web`, and that is what
+        // the split has to explain.
+        assert_eq!(
+            split("kyou,websaitoni", &["kyo", "ky", "web"]).as_deref(),
+            Some("きょう、webさいとに")
+        );
+        // Both halves of `closesite` are surfaces; only `close` is one
+        // romaji could not have produced.
+        assert_eq!(
+            split("closesite", &["close", "site"]).as_deref(),
+            Some("closeして")
+        );
     }
 
     #[test]
