@@ -158,6 +158,13 @@ impl InputMethodEngine {
             return EngineResult::consumed();
         }
 
+        // A bare `:` is no shortcode query yet, so the picker has nothing
+        // to show: convert it as the symbol it is (`：` / `:`), the way it
+        // converts mid-word, instead of leaving Space dead.
+        if self.mode.current() == InputMode::Emoji && reading == ":" {
+            self.mode.exit_temporary();
+        }
+
         // Get candidates from kanji converter (use full num_candidates for explicit conversion)
         let mut candidates = self.build_conversion_candidates(
             &reading,

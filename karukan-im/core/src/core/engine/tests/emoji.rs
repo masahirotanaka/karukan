@@ -352,3 +352,19 @@ fn colon_in_hiragana_does_not_enter_emoji_when_already_composing() {
     // not have triggered emoji mode.
     assert!(engine.preedit().unwrap().text().contains('あ'));
 }
+
+#[test]
+fn space_on_bare_colon_converts_the_symbol() {
+    // `:` alone is no shortcode yet: Space must offer the symbol's width
+    // forms rather than do nothing.
+    let mut engine = InputMethodEngine::new();
+    engine.process_key(&press_colon());
+    engine.process_key(&press_key(Keysym::SPACE));
+    let InputState::Conversion { candidates, .. } = engine.state() else {
+        panic!("expected conversion, got {:?}", engine.state());
+    };
+    let texts: Vec<_> = candidates.candidates().iter().map(|c| c.text.as_str()).collect();
+    assert!(texts.contains(&"："), "{texts:?}");
+    assert!(texts.contains(&":"), "{texts:?}");
+    assert_eq!(engine.mode.current(), InputMode::Hiragana);
+}
